@@ -1,5 +1,6 @@
 import extractor
 import reader
+import shutil
 
 if __name__ == "__main__":
     tasks = reader.read_tasks_from_json("inputs/tasks.json")
@@ -11,3 +12,5 @@ if __name__ == "__main__":
         has_audio = extractor.extract_audio(f"temp/clips/{task['task_id']}.mp4", f"temp/audio/{task['task_id']}.wav")
 
         print(f"Task ID: {task['task_id']}, Clip duration: {duration:.1f}s, Has audio: {has_audio}")
+
+    # shutil.rmtree("temp") # Delete temp folder after fully done

@@ -13,5 +13,15 @@
     "task_id": "v3",
     "video_url": "https://storage.googleapis.com/amd-hackathon-clips/3044693-uhd_3840_2160_24fps.mp4",
     "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "v4",
+    "video_url": "https://drive.google.com/uc?export=download&id=1AzmTSkBB8kkF-GLWHRoe1tqSSf-JoNE5",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
+  },
+  {
+    "task_id": "v5",
+    "video_url": "https://drive.google.com/uc?export=download&id=13lKNO9onlIcWw-TWSV8Sap1tsSM46eSd",
+    "styles": ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
   }
 ]

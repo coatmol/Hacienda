@@ -26,7 +26,7 @@ def get_duration(video_path: str) -> float:
 def compute_frame_timestamps(
     duration: float, safety_margin: float = 0.15
 ) -> list[float]:
-    frame_count = max(8, min(24, int(duration / 3)))
+    frame_count = max(8, min(48, int(duration / 3)))
     max_ts = max(duration - safety_margin, 0)
 
     if frame_count <= 1:
@@ -88,22 +88,18 @@ def extract_audio(video_path: str, out_path: str) -> bool:
     if not has_audio:
         return False
 
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            video_path,
-            "-vn",
-            "-acodec",
-            "pcm_s16le",
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            out_path,
-        ],
-        capture_output=True,
-        check=True,
-    )
+    folder_path = os.path.dirname(out_path)
+    if folder_path:
+        os.makedirs(folder_path, exist_ok=True)
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-vn",
+            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", out_path],
+            capture_output=True, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print("FFMPEG STDERR:", e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr)
+        raise
+
     return True
