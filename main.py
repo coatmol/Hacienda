@@ -1,16 +1,36 @@
 import extractor
 import reader
 import shutil
+from captioner import DEFAULT_STYLES, fallback_captions, generate_captions
+from gemma_client import GemmaClient
 
 if __name__ == "__main__":
-    tasks = reader.read_tasks_from_json("inputs/tasks.json")
+    input_path = reader.resolve_input_path()
+    output_path = reader.resolve_output_path()
+    tasks = reader.read_tasks_from_json(input_path)
+    client = GemmaClient()
+
+    results = []
     for task in tasks:
-        reader.download_video(task["video_url"], f"temp/clips/{task['task_id']}.mp4")
+        task_id = task["task_id"]
+        video_path = f"temp/clips/{task_id}.mp4"
 
-    for task in tasks:
-        frames, duration, timestamps = extractor.extract_frames(f"temp/clips/{task['task_id']}.mp4", f"temp/frames/{task['task_id']}")
-        has_audio = extractor.extract_audio(f"temp/clips/{task['task_id']}.mp4", f"temp/audio/{task['task_id']}.wav")
+        try:
+            reader.download_video(task["video_url"], video_path)
+            frame_chunks, duration = extractor.extract_frame_chunks(video_path, f"temp/frames/{task_id}")
+            has_audio = extractor.extract_audio(video_path, f"temp/audio/{task_id}.wav")
 
-        print(f"Task ID: {task['task_id']}, Clip duration: {duration:.1f}s, Has audio: {has_audio}")
+            print(
+                f"Task ID: {task_id}, Clip duration: {duration:.1f}s, "
+                f"Chunks: {len(frame_chunks)}, Has audio: {has_audio}"
+            )
+            captions = generate_captions(task, frame_chunks, duration, has_audio, client)
+        except Exception as exc:
+            print(f"Task {task_id} failed, writing fallback captions: {exc}")
+            captions = fallback_captions(task.get("styles") or DEFAULT_STYLES)
 
-    # shutil.rmtree("temp") # Delete temp folder after fully done
+        results.append({"task_id": task_id, "captions": captions})
+        reader.write_results(results, output_path)
+
+    reader.write_results(results, output_path)
+    shutil.rmtree("temp", ignore_errors=True)
