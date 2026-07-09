@@ -1,3 +1,4 @@
+from pipeline.evaluator import evaluate_captions
 import pipeline.extractor as extractor
 import pipeline.reader as reader
 import pipeline.transcriber as transcriber
@@ -31,6 +32,26 @@ if __name__ == "__main__":
                 print(f"Transcription for {task_id}: {transcription.get('text', 'No text found.')}")
 
             captions = generate_captions(task, frame_chunks, duration, has_audio, client, transcription)
+
+            all_frame_paths = []
+            for chunk in frame_chunks:
+                all_frame_paths.extend(chunk["frames"])
+
+            scores = evaluate_captions(all_frame_paths, captions, client)
+
+            # 3. If scores are low, trigger a re-generation for specific styles
+            if scores:
+                weak_styles = [
+                    s
+                    for s, metrics in scores.items()
+                    if (metrics["accuracy"] + metrics["style_match"]) / 2 < 0.6
+                ]
+
+                if weak_styles:
+                    print(f"  Weak styles detected: {weak_styles}. Regenerating...")
+                    captions = generate_captions(
+                        task, frame_chunks, duration, has_audio, client, transcription, focus_styles=weak_styles
+                    )
         except Exception as exc:
             print(f"Task {task_id} failed, writing fallback captions: {exc}")
             captions = fallback_captions(task.get("styles") or DEFAULT_STYLES)

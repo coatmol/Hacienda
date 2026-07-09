@@ -35,6 +35,7 @@ def generate_captions(
     has_audio: bool,
     client: GemmaClient,
     transcription: Optional[str] = None,
+    focus_styles: Optional[List[str]] = None,
 ) -> Dict[str, str]:
     styles = task.get("styles") or DEFAULT_STYLES
 
@@ -44,25 +45,10 @@ def generate_captions(
         )
         draft = _generate_from_evidence(evidence, styles, client)
 
-        # --- NEW: Local Self-Evaluation ---
-        weak_styles = []
-        for style in styles:
-            cap = draft.get(style, "")
-            if not cap or len(cap.split()) < 5:
-                weak_styles.append(style)
-            elif style == "humorous_non_tech" and _contains_tech_word(cap):
-                weak_styles.append(style)
-
-        # If no weak styles are found, skip the repair step entirely!
-        if not weak_styles:
-            print(f"  Self-eval: all styles passed for {task['task_id']}.")
-            return enforce_caption_rules(draft, styles, evidence)
-
-        print(f"  Self-eval: weak styles detected {weak_styles}, repairing...")
+        # This will trigger the repair with targeted focus if focus_styles is passed
         repaired = _repair_captions(
-            evidence, styles, draft, client, focus_styles=weak_styles
+            evidence, styles, draft, client, focus_styles=focus_styles
         )
-
         return enforce_caption_rules(repaired, styles, evidence)
     except Exception as exc:
         print(f"Caption pipeline failed for {task.get('task_id')}: {exc}")
@@ -197,7 +183,7 @@ def _repair_captions(
 
     styles_note = ""
     if focus_styles:
-        styles_note = f" Note: Pay extra attention to completely rewriting and fixing these specific styles: {', '.join(focus_styles)}."
+        styles_note = f"\nNote: Pay extra attention to completely rewriting and fixing these specific styles: {', '.join(focus_styles)}."
 
     prompt = (
         "You are a strict LLM judge repairing captions before submission. "
@@ -206,29 +192,21 @@ def _repair_captions(
         f"{styles_note}"
     )
 
-    for attempt in range(2):
-        try:
-            raw = client.chat(
-                prompt,
-                json.dumps(
-                    {
-                        "requested_styles": styles,
-                        "evidence": evidence,
-                        "draft_captions": captions,
-                    },
-                    ensure_ascii=True,
-                ),
-                max_tokens=700,
-                temperature=0.25,
-            )
-            data = extract_json_object(raw)
-            return {
-                style: str(data.get(style, captions.get(style, ""))) for style in styles
-            }
-        except Exception as e:
-            print(f"  Repair attempt {attempt + 1} failed: {e}")
-
-    return captions
+    raw = client.chat(
+        prompt,
+        json.dumps(
+            {
+                "requested_styles": styles,
+                "evidence": evidence,
+                "draft_captions": captions,
+            },
+            ensure_ascii=True,
+        ),
+        max_tokens=700,
+        temperature=0.25,
+    )
+    data = extract_json_object(raw)
+    return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
 
 
 def enforce_caption_rules(
