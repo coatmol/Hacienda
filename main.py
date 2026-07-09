@@ -19,7 +19,9 @@ if __name__ == "__main__":
 
         try:
             reader.download_video(task["video_url"], video_path)
-            frame_chunks, duration = extractor.extract_frame_chunks(video_path, f"temp/frames/{task_id}")
+            frame_chunks, duration = extractor.extract_frame_chunks(
+                video_path, f"temp/frames/{task_id}"
+            )
             has_audio = extractor.extract_audio(video_path, f"temp/audio/{task_id}.wav")
 
             print(
@@ -27,11 +29,19 @@ if __name__ == "__main__":
                 f"Chunks: {len(frame_chunks)}, Has audio: {has_audio}"
             )
 
-            transcription = transcriber.transcribe_audio(f"temp/audio/{task_id}.wav") if has_audio else None
+            transcription = (
+                transcriber.transcribe_audio(f"temp/audio/{task_id}.wav")
+                if has_audio
+                else None
+            )
             if transcription is not None:
-                print(f"Transcription for {task_id}: {transcription.get('text', 'No text found.')}")
+                print(
+                    f"Transcription for {task_id}: {transcription.get('text', 'No text found.')}"
+                )
 
-            captions = generate_captions(task, frame_chunks, duration, has_audio, client, transcription)
+            captions = generate_captions(
+                task, frame_chunks, duration, has_audio, client, transcription
+            )
 
             all_frame_paths = []
             for chunk in frame_chunks:
@@ -50,7 +60,13 @@ if __name__ == "__main__":
                 if weak_styles:
                     print(f"  Weak styles detected: {weak_styles}. Regenerating...")
                     captions = generate_captions(
-                        task, frame_chunks, duration, has_audio, client, transcription, focus_styles=weak_styles
+                        task,
+                        frame_chunks,
+                        duration,
+                        has_audio,
+                        client,
+                        transcription,
+                        focus_styles=weak_styles,
                     )
         except Exception as exc:
             print(f"Task {task_id} failed, writing fallback captions: {exc}")

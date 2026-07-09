@@ -8,6 +8,7 @@ MAX_FRAMES_PER_CLIP = 24
 CHUNK_SECONDS = 60.0
 FRAME_WIDTH = 768
 
+
 def get_duration(video_path: str) -> float:
     """Get clip duration in seconds via ffprobe."""
     result = subprocess.run(
@@ -60,7 +61,9 @@ def compute_frame_chunks(
     return [chunk for chunk in chunks if chunk]
 
 
-def extract_frames(video_path: str, out_dir: str) -> Tuple[List[str], float, List[float]]:
+def extract_frames(
+    video_path: str, out_dir: str
+) -> Tuple[List[str], float, List[float]]:
     os.makedirs(out_dir, exist_ok=True)
     duration = get_duration(video_path)
     timestamps = compute_frame_timestamps(duration)
@@ -167,12 +170,28 @@ def extract_audio(video_path: str, out_path: str) -> bool:
 
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vn",
-            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", out_path],
-            capture_output=True, check=True
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-vn",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                out_path,
+            ],
+            capture_output=True,
+            check=True,
         )
     except subprocess.CalledProcessError as e:
-        print("FFMPEG STDERR:", e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr)
+        print(
+            "FFMPEG STDERR:",
+            e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr,
+        )
         raise
 
     return True
