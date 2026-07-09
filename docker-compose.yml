@@ -1,13 +1,24 @@
-version: '3.8'
-
 services:
+  # Batch pipeline — reads /input/tasks.json, writes /output/results.json
   app:
     build:
       context: .
     image: hacienda
-    # 1. Automatically injects your local .env file
     env_file:
       - .env
-    # 2. Automatically live-syncs your folders
+    volumes:
+      - .:/app
+
+  # Demo web app — interactive UI at http://localhost:8080
+  demo:
+    build:
+      context: .
+    image: hacienda
+    env_file:
+      - .env
+    environment:
+      - HACIENDA_MODE=demo
+    ports:
+      - "8080:8080"
     volumes:
       - .:/app

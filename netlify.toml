@@ -1,0 +1,9 @@
+[build]
+  publish = "demo/static"
+  command = """echo "const HACIENDA_CONFIG={baseUrl:'$HACIENDA_GEMMA_BASE_URL',token:'$HACIENDA_GEMMA_TOKEN',model:'$HACIENDA_GEMMA_MODEL'};" > demo/static/config.js"""
+
+# SPA fallback — serve index.html for all routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
