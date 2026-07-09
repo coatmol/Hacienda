@@ -3,7 +3,7 @@ import pipeline.reader as reader
 import pipeline.transcriber as transcriber
 import shutil
 from pipeline.captioner import DEFAULT_STYLES, fallback_captions, generate_captions
-from pipeline.gemma_client import GemmaClient
+from gemma_client import GemmaClient
 
 if __name__ == "__main__":
     input_path = reader.resolve_input_path()

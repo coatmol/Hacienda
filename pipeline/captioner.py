@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-from pipeline.gemma_client import GemmaClient, extract_json_object
+from gemma_client import GemmaClient, extract_json_object
 
 
 DEFAULT_STYLES = ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
@@ -43,7 +43,26 @@ def generate_captions(
             task["task_id"], frame_chunks, duration, has_audio, client, transcription
         )
         draft = _generate_from_evidence(evidence, styles, client)
-        repaired = _repair_captions(evidence, styles, draft, client)
+
+        # --- NEW: Local Self-Evaluation ---
+        weak_styles = []
+        for style in styles:
+            cap = draft.get(style, "")
+            if not cap or len(cap.split()) < 5:
+                weak_styles.append(style)
+            elif style == "humorous_non_tech" and _contains_tech_word(cap):
+                weak_styles.append(style)
+
+        # If no weak styles are found, skip the repair step entirely!
+        if not weak_styles:
+            print(f"  Self-eval: all styles passed for {task['task_id']}.")
+            return enforce_caption_rules(draft, styles, evidence)
+
+        print(f"  Self-eval: weak styles detected {weak_styles}, repairing...")
+        repaired = _repair_captions(
+            evidence, styles, draft, client, focus_styles=weak_styles
+        )
+
         return enforce_caption_rules(repaired, styles, evidence)
     except Exception as exc:
         print(f"Caption pipeline failed for {task.get('task_id')}: {exc}")
@@ -144,14 +163,26 @@ def _generate_from_evidence(
         "humorous_tech is funny with programming or technology references; "
         "humorous_non_tech is funny with everyday humor and no tech jargon."
     )
-    raw = client.chat(
-        prompt,
-        json.dumps({"requested_styles": styles, "evidence": evidence}, ensure_ascii=True),
-        max_tokens=700,
-        temperature=0.65,
-    )
-    data = extract_json_object(raw)
-    return {style: str(data.get(style, "")) for style in styles}
+
+    # --- NEW: Retry loop for transient JSON errors ---
+    for attempt in range(2):
+        try:
+            raw = client.chat(
+                prompt,
+                json.dumps(
+                    {"requested_styles": styles, "evidence": evidence},
+                    ensure_ascii=True,
+                ),
+                max_tokens=700,
+                temperature=0.65,
+            )
+            data = extract_json_object(raw)
+            return {style: str(data.get(style, "")) for style in styles}
+        except Exception as e:
+            print(f"  Draft generation attempt {attempt + 1} failed: {e}")
+
+    # Fallback if both attempts fail
+    return fallback_captions(styles, evidence)
 
 
 def _repair_captions(
@@ -159,26 +190,45 @@ def _repair_captions(
     styles: List[str],
     captions: Dict[str, str],
     client: GemmaClient,
+    focus_styles: Optional[List[str]] = None,
 ) -> Dict[str, str]:
     if not client.available:
         return captions
+
+    styles_note = ""
+    if focus_styles:
+        styles_note = f" Note: Pay extra attention to completely rewriting and fixing these specific styles: {', '.join(focus_styles)}."
 
     prompt = (
         "You are a strict LLM judge repairing captions before submission. "
         "Return only JSON with every requested style. Fix missing, unfaithful, off-style, too long, "
         "too short, multi-sentence, or unsafe captions. Do not add facts beyond the evidence."
+        f"{styles_note}"
     )
-    raw = client.chat(
-        prompt,
-        json.dumps(
-            {"requested_styles": styles, "evidence": evidence, "draft_captions": captions},
-            ensure_ascii=True,
-        ),
-        max_tokens=700,
-        temperature=0.25,
-    )
-    data = extract_json_object(raw)
-    return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
+
+    for attempt in range(2):
+        try:
+            raw = client.chat(
+                prompt,
+                json.dumps(
+                    {
+                        "requested_styles": styles,
+                        "evidence": evidence,
+                        "draft_captions": captions,
+                    },
+                    ensure_ascii=True,
+                ),
+                max_tokens=700,
+                temperature=0.25,
+            )
+            data = extract_json_object(raw)
+            return {
+                style: str(data.get(style, captions.get(style, ""))) for style in styles
+            }
+        except Exception as e:
+            print(f"  Repair attempt {attempt + 1} failed: {e}")
+
+    return captions
 
 
 def enforce_caption_rules(
