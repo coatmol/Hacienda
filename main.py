@@ -1,8 +1,9 @@
-import extractor
-import reader
+import pipeline.extractor as extractor
+import pipeline.reader as reader
+import pipeline.transcriber as transcriber
 import shutil
-from captioner import DEFAULT_STYLES, fallback_captions, generate_captions
-from gemma_client import GemmaClient
+from pipeline.captioner import DEFAULT_STYLES, fallback_captions, generate_captions
+from pipeline.gemma_client import GemmaClient
 
 if __name__ == "__main__":
     input_path = reader.resolve_input_path()
@@ -24,7 +25,12 @@ if __name__ == "__main__":
                 f"Task ID: {task_id}, Clip duration: {duration:.1f}s, "
                 f"Chunks: {len(frame_chunks)}, Has audio: {has_audio}"
             )
-            captions = generate_captions(task, frame_chunks, duration, has_audio, client)
+
+            transcription = transcriber.transcribe_audio(f"temp/audio/{task_id}.wav") if has_audio else None
+            if transcription is not None:
+                print(f"Transcription for {task_id}: {transcription.get('text', 'No text found.')}")
+
+            captions = generate_captions(task, frame_chunks, duration, has_audio, client, transcription)
         except Exception as exc:
             print(f"Task {task_id} failed, writing fallback captions: {exc}")
             captions = fallback_captions(task.get("styles") or DEFAULT_STYLES)

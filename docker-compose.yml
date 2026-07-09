@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+    image: hacienda
+    # 1. Automatically injects your local .env file
+    env_file:
+      - .env
+    # 2. Automatically live-syncs your folders
+    volumes:
+      - .:/app

@@ -11,9 +11,7 @@ ENV HACIENDA_GEMMA_TOKEN=${HACIENDA_GEMMA_TOKEN}
 ENV HACIENDA_GEMMA_MODEL=${HACIENDA_GEMMA_MODEL}
 ENV PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install any needed packages specified in requirements.txt
 COPY requirements.txt .

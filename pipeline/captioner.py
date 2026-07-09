@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-from gemma_client import GemmaClient, extract_json_object
+from pipeline.gemma_client import GemmaClient, extract_json_object
 
 
 DEFAULT_STYLES = ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
@@ -34,11 +34,14 @@ def generate_captions(
     duration: float,
     has_audio: bool,
     client: GemmaClient,
+    transcription: Optional[str] = None,
 ) -> Dict[str, str]:
     styles = task.get("styles") or DEFAULT_STYLES
 
     try:
-        evidence = _collect_visual_evidence(task["task_id"], frame_chunks, duration, has_audio, client)
+        evidence = _collect_visual_evidence(
+            task["task_id"], frame_chunks, duration, has_audio, client, transcription
+        )
         draft = _generate_from_evidence(evidence, styles, client)
         repaired = _repair_captions(evidence, styles, draft, client)
         return enforce_caption_rules(repaired, styles, evidence)
@@ -53,6 +56,7 @@ def _collect_visual_evidence(
     duration: float,
     has_audio: bool,
     client: GemmaClient,
+    transcription: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not client.available:
         return {
@@ -66,6 +70,7 @@ def _collect_visual_evidence(
             "uncertainty": ["Gemma analysis unavailable"],
             "duration_seconds": round(duration, 1),
             "has_audio": has_audio,
+            "transcription": transcription,
         }
 
     chunk_observations = []
@@ -75,12 +80,17 @@ def _collect_visual_evidence(
             "setting, subjects, actions, objects, visual_details, temporal_changes, mood, uncertainty, summary. "
             "Be concrete and literal. Do not invent details that are not visible."
         )
-        user_text = (
-            f"Task {task_id}, video duration {duration:.1f}s, audio_present={has_audio}. "
+        user_text = f"Task {task_id}, video duration {duration:.1f}s, audio_present={has_audio}. "
+        if transcription:
+            user_text += f"Audio Transcription: '{transcription}'. "
+
+        user_text += (
             f"This chunk spans {chunk['start']:.1f}s to {chunk['end']:.1f}s. "
             f"Frame timestamps: {chunk['timestamps']}."
         )
-        raw = client.chat(prompt, user_text, chunk["frames"], max_tokens=900, temperature=0.2)
+        raw = client.chat(
+            prompt, user_text, chunk["frames"], max_tokens=900, temperature=0.2
+        )
         observation = extract_json_object(raw)
         observation["chunk_start"] = chunk["start"]
         observation["chunk_end"] = chunk["end"]
@@ -90,6 +100,7 @@ def _collect_visual_evidence(
         merged = chunk_observations[0]
         merged["duration_seconds"] = round(duration, 1)
         merged["has_audio"] = has_audio
+        merged["transcription"] = transcription
         return merged
 
     merge_prompt = (
@@ -97,6 +108,7 @@ def _collect_visual_evidence(
         "Return only JSON with keys: setting, subjects, actions, objects, visual_details, "
         "temporal_changes, mood, uncertainty, summary. Preserve uncertainty."
     )
+
     raw = client.chat(
         merge_prompt,
         json.dumps(
@@ -110,9 +122,11 @@ def _collect_visual_evidence(
         max_tokens=900,
         temperature=0.2,
     )
+
     merged = extract_json_object(raw)
     merged["duration_seconds"] = round(duration, 1)
     merged["has_audio"] = has_audio
+    merged["transcription"] = transcription
     return merged
 
 
@@ -124,7 +138,7 @@ def _generate_from_evidence(
 
     prompt = (
         "You are Gemma writing captions for a video-captioning benchmark. "
-        "Use only the provided evidence. Return only JSON where every requested style maps to one caption. "
+        "Use only the provided visual evidence and audio transcription. Return only JSON where every requested style maps to one caption. "
         "Each caption must be English, one sentence, 10-28 words, and faithful to the evidence. "
         "Style rules: formal is objective and professional; sarcastic is dry and lightly ironic; "
         "humorous_tech is funny with programming or technology references; "
