@@ -70,29 +70,33 @@ class GemmaClient:
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
 
-        # Vision model uses the standard /chat/completions endpoint
+        # Gemma-4-e4b lacks a chat template on Fireworks, so we use /completions
         endpoint = self.base_url
-        if not endpoint.endswith("/chat/completions"):
-            endpoint = f"{endpoint}/chat/completions"
+        if endpoint.endswith("/chat/completions"):
+            endpoint = endpoint.replace("/chat/completions", "/completions")
+        elif not endpoint.endswith("/completions"):
+            endpoint = f"{endpoint}/completions"
 
-        content: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
-        for image_path in image_paths:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{_encode_image(image_path)}"},
-                }
-            )
+        # Prevent overwhelming the model with too many image tokens (causes hallucination/loops)
+        if len(image_paths) > 3:
+            mid = len(image_paths) // 2
+            image_paths = [image_paths[0], image_paths[mid], image_paths[-1]]
+
+        # Construct prompt with <image> tokens for the multimodal Gemma model
+        images_prompt = " ".join(["<image>"] * len(image_paths))
+        full_user_text = f"{images_prompt}\n{user_text}"
+        
+        prompt_string = f"<start_of_turn>user\n{system_prompt}\n\n{full_user_text}<end_of_turn>\n<start_of_turn>model\n"
+
+        base64_images = [_encode_image(path) for path in image_paths]
 
         payload = {
-            "model": self.vision_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
+            "model": self.model,
+            "prompt": prompt_string,
+            "images": base64_images,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "response_format": {"type": "json_object"},
+            "stop": ["<end_of_turn>"],
         }
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -102,8 +106,8 @@ class GemmaClient:
         response = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
-        raw_text = data["choices"][0]["message"]["content"].strip()
-        print(f"DEBUG VISION OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
+        raw_text = data["choices"][0]["text"].strip()
+        print(f"DEBUG {self.model} (VISION) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 
 
