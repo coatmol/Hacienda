@@ -12,6 +12,7 @@ class GemmaClient:
         self.base_url = os.getenv("HACIENDA_GEMMA_BASE_URL", "").rstrip("/")
         self.token = os.getenv("HACIENDA_GEMMA_TOKEN", "")
         self.model = os.getenv("HACIENDA_GEMMA_MODEL", "gemma")
+        self.vision_model = "accounts/fireworks/models/glm-5p2"
         self.timeout = int(os.getenv("HACIENDA_GEMMA_TIMEOUT", "90"))
 
     @property
@@ -29,27 +30,21 @@ class GemmaClient:
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
 
+        # Force use of /completions for the text generation model since it lacks a chat template
         endpoint = self.base_url
-        if not endpoint.endswith("/chat/completions"):
-            endpoint = f"{endpoint}/chat/completions"
+        if endpoint.endswith("/chat/completions"):
+            endpoint = endpoint.replace("/chat/completions", "/completions")
+        elif not endpoint.endswith("/completions"):
+            endpoint = f"{endpoint}/completions"
 
-        content: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
-        for image_path in image_paths or []:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{_encode_image(image_path)}"},
-                }
-            )
+        prompt_string = f"<start_of_turn>user\n{system_prompt}\n\n{user_text}<end_of_turn>\n<start_of_turn>model\n"
 
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
+            "prompt": prompt_string,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "stop": ["<end_of_turn>"],
         }
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -59,37 +54,87 @@ class GemmaClient:
         response = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"]
+        
+        raw_text = data["choices"][0]["text"].strip()
+        print(f"DEBUG {self.model} OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
+        return raw_text
+
+    def vision_chat(
+        self,
+        system_prompt: str,
+        user_text: str,
+        image_paths: List[str],
+        max_tokens: int = 900,
+        temperature: float = 0.35,
+    ) -> str:
+        if not self.available:
+            raise RuntimeError("Gemma proxy is not configured.")
+
+        # Vision model uses the standard /chat/completions endpoint
+        endpoint = self.base_url
+        if not endpoint.endswith("/chat/completions"):
+            endpoint = f"{endpoint}/chat/completions"
+
+        content: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
+        for image_path in image_paths:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{_encode_image(image_path)}"},
+                }
+            )
+
+        payload = {
+            "model": self.vision_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json()
+        raw_text = data["choices"][0]["message"]["content"].strip()
+        print(f"DEBUG VISION OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
+        return raw_text
 
 
 def extract_json_object(text: str) -> Dict[str, Any]:
-    parsed = _extract_json(text)
-    if isinstance(parsed, dict):
-        return parsed
-    raise ValueError("Expected JSON object.")
+    """Robust JSON extraction inspired by competitor's fallback logic."""
+    if not text:
+        raise ValueError("Empty response from model.")
+
+    cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"No valid JSON object found in model response.")
 
 
 def _encode_image(path: str) -> str:
     with open(path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
-
-
-def _extract_json(text: str) -> Any:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
-        cleaned = re.sub(r"```$", "", cleaned).strip()
-
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    candidates = re.findall(r"(\{.*\}|\[.*\])", cleaned, flags=re.DOTALL)
-    for candidate in candidates:
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-
-    raise ValueError("No valid JSON found in model response.")

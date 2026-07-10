@@ -93,8 +93,8 @@ def _collect_visual_evidence(
             f"This chunk spans {chunk['start']:.1f}s to {chunk['end']:.1f}s. "
             f"Frame timestamps: {chunk['timestamps']}."
         )
-        raw = client.chat(
-            prompt, user_text, chunk["frames"], max_tokens=900, temperature=0.2
+        raw = client.vision_chat(
+            system_prompt=prompt, user_text=user_text, image_paths=chunk["frames"], max_tokens=900, temperature=0.2
         )
         observation = extract_json_object(raw)
         observation["chunk_start"] = chunk["start"]

@@ -8,7 +8,8 @@ services:
       - .env
     volumes:
       - .:/app
-
+      - ./inputs:/input
+      - ./output:/output
   # Demo web app — interactive UI at http://localhost:8080
   demo:
     build:

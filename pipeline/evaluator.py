@@ -39,9 +39,9 @@ def evaluate_captions(
             user_text += f'{style}: "{text}"\n'
 
     try:
-        raw_text = client.chat(
-            system_prompt,
-            user_text,
+        raw_text = client.vision_chat(
+            system_prompt=system_prompt,
+            user_text=user_text,
             image_paths=frame_paths,
             max_tokens=500,
             temperature=0.3,
