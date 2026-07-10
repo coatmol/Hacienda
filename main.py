@@ -3,6 +3,11 @@ import pipeline.extractor as extractor
 import pipeline.reader as reader
 import pipeline.transcriber as transcriber
 import shutil
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (now baked into the Docker image)
+load_dotenv()
+
 from pipeline.captioner import DEFAULT_STYLES, fallback_captions, generate_captions
 from gemma_client import GemmaClient
 

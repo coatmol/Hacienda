@@ -10,7 +10,8 @@ Hacienda watches a video so you don't have to. It downloads clips, samples keyfr
 
 - **Adaptive frame sampling** — picks 8–24 keyframes scaled to clip duration, chunked for long videos
 - **Audio transcription** — extracts speech via [Groq Whisper](https://groq.com/) (large-v3) when an audio track is present
-- **Vision-language analysis** — sends frames + transcript to a Gemma proxy on AMD Developer Cloud for grounded scene understanding
+- **Vision-language analysis** — extracts visual facts using minimax-m3, then drafts captions using a custom fine-tuned Gemma-4-e4b model on Fireworks AI
+- **Interactive Web UI** — upload videos or test URLs interactively via the built-in FastAPI demo interface
 - **Multi-style captioning** — generates `formal`, `sarcastic`, `humorous_tech`, and `humorous_non_tech` captions per clip
 - **Self-evaluation & repair** — scores each caption for accuracy and tone, then rewrites weak ones automatically
 - **Deterministic fallbacks** — every task always produces valid output, even when the model is unavailable
@@ -53,7 +54,7 @@ tasks.json
 | **Transcriber** | `pipeline/transcriber.py` | Sends audio to Groq's Whisper-large-v3 endpoint for speech-to-text |
 | **Captioner** | `pipeline/captioner.py` | Collects per-chunk visual evidence via Gemma, drafts four caption styles, then repairs off-tone or unfaithful results |
 | **Evaluator** | `pipeline/evaluator.py` | Scores each caption on `accuracy` and `style_match` (0–1); flags weak styles for re-generation |
-| **Gemma Client** | `gemma_client.py` | OpenAI-compatible chat client with base64 image support and robust JSON extraction |
+| **Gemma Client** | `gemma_client.py` | Client for Fireworks AI (minimax-m3 for vision, Gemma-4-e4b for text) with robust JSON extraction |
 
 ---
 
@@ -75,17 +76,17 @@ cd Hacienda
 Create a `.env` file in the project root (already in `.gitignore`):
 
 ```env
-HACIENDA_GEMMA_BASE_URL=https://your-proxy.example/v1
-HACIENDA_GEMMA_TOKEN=your-revocable-token
-HACIENDA_GEMMA_MODEL=your-hosted-gemma-model
+HACIENDA_GEMMA_BASE_URL=https://api.fireworks.ai/inference/v1
+HACIENDA_GEMMA_TOKEN=your-fireworks-api-key
+HACIENDA_GEMMA_MODEL=accounts/gamal004/deployments/ie6yw9o2
 GROQ_API_KEY=your-groq-api-key
 ```
 
 | Variable | Purpose |
 |----------|---------|
-| `HACIENDA_GEMMA_BASE_URL` | Base URL of your Gemma vision-language proxy |
-| `HACIENDA_GEMMA_TOKEN` | Bearer token for the proxy (use a revocable, low-quota key) |
-| `HACIENDA_GEMMA_MODEL` | Model identifier served by the proxy |
+| `HACIENDA_GEMMA_BASE_URL` | Base URL of the Fireworks AI inference endpoint |
+| `HACIENDA_GEMMA_TOKEN` | Bearer token for Fireworks AI (API Key) |
+| `HACIENDA_GEMMA_MODEL` | The custom fine-tuned Gemma-4-e4b model on Fireworks AI |
 | `GROQ_API_KEY` | API key for Groq's Whisper audio transcription |
 
 ### 3. Build & run with Docker Compose (recommended)
@@ -151,18 +152,18 @@ Each caption is a single English sentence, 10–28 words, faithful to the visual
 
 ## 🐳 Building for submission
 
-To bake credentials into the final image for judging:
+To securely bake credentials into the final image for judging without exposing them in your GitHub repository:
+
+1. Ensure your `.env` file contains your actual API keys.
+2. We have configured the `.dockerignore` to **include** `.env` during the build process, while `.gitignore` prevents it from being pushed to GitHub.
+3. Build and push the image:
 
 ```bash
-docker buildx build --platform linux/amd64 \
-  --build-arg HACIENDA_GEMMA_BASE_URL="https://your-proxy.example/v1" \
-  --build-arg HACIENDA_GEMMA_TOKEN="revocable-token" \
-  --build-arg HACIENDA_GEMMA_MODEL="your-hosted-gemma-model" \
-  --tag your-registry/hacienda:latest \
-  --push .
+docker build -t your-username/hacienda:latest .
+docker push your-username/hacienda:latest
 ```
 
-> **Note:** Track 2 does not inject credentials at runtime. Use a revocable, low-quota token in the build args.
+When the container runs, the built-in `python-dotenv` loader will automatically read the `.env` file baked inside the image!
 
 ---
 
@@ -174,7 +175,8 @@ docker buildx build --platform linux/amd64 \
 | Container | Docker (slim base) |
 | Media processing | FFmpeg / FFprobe |
 | Audio transcription | Groq Whisper (large-v3) |
-| Vision-language model | Gemma via AMD Developer Cloud proxy |
+| Vision model | minimax-m3 via Fireworks AI |
+| Text model | Fine-tuned Gemma-4-e4b via Fireworks AI |
 | HTTP client | Requests |
 
 ---
