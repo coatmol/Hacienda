@@ -23,39 +23,38 @@ class GemmaClient:
         self,
         system_prompt: str,
         user_text: str,
-        image_paths: Optional[List[str]] = None,
         max_tokens: int = 900,
         temperature: float = 0.35,
     ) -> str:
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
 
-        # Force use of /completions for the text generation model since it lacks a chat template
+        # Standard Fireworks/OpenAI chat completions endpoint
         endpoint = self.base_url
-        if endpoint.endswith("/chat/completions"):
-            endpoint = endpoint.replace("/chat/completions", "/completions")
-        elif not endpoint.endswith("/completions"):
-            endpoint = f"{endpoint}/completions"
-
-        prompt_string = f"<start_of_turn>user\n{system_prompt}\n\n{user_text}<end_of_turn>\n<start_of_turn>model\n"
+        if not endpoint.endswith("/chat/completions"):
+            endpoint = f"{endpoint}/chat/completions"
 
         payload = {
             "model": self.model,
-            "prompt": prompt_string,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stop": ["<end_of_turn>"],
+            "response_format": {"type": "json_object"},
         }
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
         response = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
         
-        raw_text = data["choices"][0]["text"].strip()
+        raw_text = data["choices"][0]["message"]["content"].strip()
         print(f"DEBUG {self.model} OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 

@@ -78,7 +78,7 @@ Create a `.env` file in the project root (already in `.gitignore`):
 ```env
 HACIENDA_GEMMA_BASE_URL=https://api.fireworks.ai/inference/v1
 HACIENDA_GEMMA_TOKEN=your-fireworks-api-key
-HACIENDA_GEMMA_MODEL=accounts/gamal004/deployments/ie6yw9o2
+HACIENDA_GEMMA_MODEL=accounts/fireworks/models/deepseek-v4-flash
 GROQ_API_KEY=your-groq-api-key
 ```
 
