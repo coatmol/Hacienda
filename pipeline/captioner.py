@@ -7,24 +7,19 @@ from gemma_client import GemmaClient, extract_json_object
 
 DEFAULT_STYLES = ["formal", "sarcastic", "humorous_tech", "humorous_non_tech"]
 TECH_WORDS = {
-    "algorithm",
-    "api",
-    "app",
-    "bug",
-    "cache",
-    "code",
-    "compiler",
-    "cpu",
-    "database",
-    "debug",
-    "gpu",
-    "latency",
-    "loop",
-    "pixel",
-    "programming",
-    "server",
-    "software",
-    "thread",
+    "algorithm", "api", "app", "backend", "bandwidth", "binary", "boolean",
+    "buffer", "bug", "byte", "cache", "callback", "cli", "cloud", "code",
+    "commit", "compiler", "cpu", "css", "data", "database", "debug",
+    "deploy", "docker", "endpoint", "firewall", "frontend", "function",
+    "git", "gpu", "hash", "html", "http", "instance", "javascript", "json",
+    "kernel", "kubernetes", "lambda", "latency", "linux", "loop", "malloc",
+    "merge", "microservice", "mutex", "node", "npm", "null", "overclocking",
+    "packet", "parse", "pipeline", "pixel", "pointer", "port", "process",
+    "programming", "protocol", "python", "query", "ram", "recursion",
+    "regex", "repository", "runtime", "script", "segfault", "server",
+    "socket", "software", "sql", "stack", "subnet", "subroutine",
+    "syntax", "tcp", "thread", "token", "udp", "variable", "vm",
+    "webhook", "wifi",
 }
 
 
@@ -150,14 +145,18 @@ def _generate_from_evidence(
         return fallback_captions(styles)
 
     prompt = (
-        "You are Gemma writing captions for a video-captioning benchmark. "
-        "Use only the provided visual evidence and audio transcription. Return only JSON where every requested style maps to one caption. "
-        "Each caption must be English, one sentence, 10-28 words, and faithful to the evidence. "
-        "Style rules: formal is objective and professional; sarcastic is dry and lightly ironic; "
-        "humorous_tech is funny with programming or technology references; "
-        "humorous_non_tech is funny with everyday humor and no tech jargon. "
-        "CRITICAL: Output ONLY a raw JSON object. Do not output markdown or API envelopes. "
-        'Example format: {"formal": "caption...", "sarcastic": "caption...", "humorous_tech": "caption...", "humorous_non_tech": "caption..."}'
+        "You are an expert video caption writer for a scoring benchmark. "
+        "Write exactly ONE caption per requested style. Each caption MUST be a single English sentence, "
+        "15-30 words, and grounded ONLY in the provided visual evidence and audio transcription. "
+        "Be SPECIFIC — mention concrete details like colors, objects, settings, and actions from the evidence. "
+        "Never invent details not present in the evidence.\n\n"
+        "STYLE RULES (each caption must sound COMPLETELY DIFFERENT from the others):\n"
+        "- formal: Objective, professional, descriptive. State facts. No humor, no opinion, no exclamations.\n"
+        "- sarcastic: Dry, ironic, lightly mocking. Use subtle wit to poke fun at what is happening. Must still describe the scene.\n"
+        "- humorous_tech: Genuinely funny using a SPECIFIC programming or technology metaphor (e.g. APIs, git, debugging, servers, threads). The humor must come from the tech analogy.\n"
+        "- humorous_non_tech: Genuinely funny using everyday humor, wordplay, or absurd observations. ABSOLUTELY ZERO technology or programming words.\n\n"
+        "CRITICAL: Return ONLY a raw JSON object with exactly 4 keys. No markdown, no explanation.\n"
+        'Format: {"formal": "...", "sarcastic": "...", "humorous_tech": "...", "humorous_non_tech": "..."}'
     )
 
     user_text = json.dumps(
@@ -168,7 +167,7 @@ def _generate_from_evidence(
     # Try Gemma twice, then fallback to minimax-m3 for guaranteed JSON
     for attempt in range(2):
         try:
-            raw = client.chat(prompt, user_text, max_tokens=700, temperature=0.65)
+            raw = client.chat(prompt, user_text, max_tokens=700, temperature=0.55)
             data = extract_json_object(raw)
             return {style: str(data.get(style, "")) for style in styles}
         except Exception as e:
@@ -177,7 +176,7 @@ def _generate_from_evidence(
     # Fallback: use minimax-m3 with guaranteed JSON mode
     try:
         print("  Falling back to minimax-m3 for draft generation...")
-        raw = client.fallback_chat(prompt, user_text, max_tokens=700, temperature=0.65)
+        raw = client.fallback_chat(prompt, user_text, max_tokens=700, temperature=0.55)
         data = extract_json_object(raw)
         return {style: str(data.get(style, "")) for style in styles}
     except Exception as e:
@@ -202,9 +201,15 @@ def _repair_captions(
         styles_note = f"\nNote: Pay extra attention to completely rewriting and fixing these specific styles: {', '.join(focus_styles)}."
 
     prompt = (
-        "You are a strict LLM judge repairing captions before submission. "
-        "Return only JSON with every requested style. Fix missing, unfaithful, off-style, too long, "
-        "too short, multi-sentence, or unsafe captions. Do not add facts beyond the evidence."
+        "You are a strict caption editor polishing captions before final submission. "
+        "Return ONLY a JSON object with all requested styles. For each caption:\n"
+        "1. KEEP all specific visual details (colors, objects, settings, actions) from the evidence.\n"
+        "2. FIX any caption that is unfaithful, off-style, too long (>30 words), too short (<12 words), "
+        "multi-sentence, or contains hallucinated details.\n"
+        "3. Ensure humorous_non_tech has ZERO technology/programming references.\n"
+        "4. Ensure humorous_tech includes a SPECIFIC tech/programming metaphor.\n"
+        "5. Ensure formal is objective with no humor or opinion.\n"
+        "6. Do NOT make captions more generic — preserve specificity."
         f"{styles_note}"
     )
 
@@ -246,7 +251,7 @@ def enforce_caption_rules(
         elif style == "humorous_non_tech" and _contains_tech_word(caption):
             caption = fallback[style]
 
-        final[style] = _limit_words(_ensure_sentence(caption), 28)
+        final[style] = _limit_words(_ensure_sentence(caption), 40)
     return final
 
 
