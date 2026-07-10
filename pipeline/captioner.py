@@ -58,6 +58,15 @@ GROUNDING_RULE = (
     "directly visible or stated in the transcript.\n"
 )
 
+CAPTION_QUALITY_RULES = (
+    "QUALITY RULES:\n"
+    "- First identify the main subject, main action, and setting; preserve those facts in the caption.\n"
+    "- Omit details that are uncertain, partly visible, blurry, or only guessed from context.\n"
+    "- For humorous styles, make the joke a stylistic twist on the factual content, not a replacement for it.\n"
+    "- Generate each requested style independently; do not paraphrase another style's caption.\n"
+    "- Prefer concrete nouns and active verbs over vague adjectives or generic praise.\n"
+)
+
 
 def generate_captions(
     task: Dict[str, Any],
@@ -200,8 +209,8 @@ def _write_style_caption(
     variety_note = ""
     if prior_captions:
         variety_note = (
-            "\nCaptions already written for this clip in other styles (for "
-            "reference — use a DIFFERENT sentence structure): "
+            "\nCaptions already written for this clip in other styles are reference only. "
+            "Write this style independently; do not paraphrase those captions: "
             + " | ".join(prior_captions)
         )
     example = STYLE_TONE_EXAMPLES.get(style, "")
@@ -216,7 +225,8 @@ def _write_style_caption(
         "Use ONLY facts from the description and transcript. Be confident — never "
         "mention frames, video, models, or uncertainty, and never hedge (appears, "
         "seems, likely). Build any joke on the real subject, action, and setting "
-        "using 'like' or 'as if'."
+        "using 'like' or 'as if'.\n"
+        f"{CAPTION_QUALITY_RULES}"
         f"{variety_note}\n"
         'Return ONLY a raw JSON object: {"caption": "..."}'
     )
@@ -270,8 +280,10 @@ def _generate_direct_captions(
         "Never use hedging words (appears, seems, likely, possibly, probably). "
         "Never mention the medium (video, clip, frame, footage) — describe the scene directly.\n"
         f"{GROUNDING_RULE}\n"
+        f"{CAPTION_QUALITY_RULES}\n"
         "STYLE RULES (each caption must sound COMPLETELY DIFFERENT from the others):\n"
         f"{_style_block(styles)}\n"
+        "Write each style from the visual facts independently; do not reuse one caption with different adjectives.\n"
         f"CRITICAL: Return ONLY a raw JSON object with exactly {len(styles)} keys. No markdown, no explanation.\n"
         f"Format: {_json_format(styles)}"
     )
@@ -329,8 +341,10 @@ def generate_style_candidates(
         "evidence. Never use hedging words (appears, seems, likely, possibly, probably). "
         "Never mention the medium (video, clip, frame, footage).\n"
         f"{GROUNDING_RULE}\n"
+        f"{CAPTION_QUALITY_RULES}\n"
         "STYLE RULES:\n"
         f"{_style_block(styles)}\n"
+        "Each candidate must preserve the factual subject, action, and setting while trying a different stylistic angle.\n"
         "CRITICAL: Return ONLY a raw JSON object mapping each style to an array of "
         f"{candidates_per_style} strings. No markdown, no explanation.\n"
         f"Format: {fmt}"
