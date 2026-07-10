@@ -25,14 +25,10 @@ class GemmaClient:
         self.base_url = os.getenv("HACIENDA_GEMMA_BASE_URL", "").rstrip("/")
         self.token = os.getenv("HACIENDA_GEMMA_TOKEN", "")
         self.model = os.getenv("HACIENDA_GEMMA_MODEL", "gemma")
-        # Generation and judging deliberately use different models: a model
-        # scoring its own captions shares its own blind spots.
-        self.vision_model = os.getenv(
-            "HACIENDA_VISION_MODEL", "accounts/fireworks/models/minimax-m3"
-        )
-        self.judge_model = os.getenv(
-            "HACIENDA_JUDGE_MODEL", "accounts/fireworks/models/glm-5p2"
-        )
+        # Use the configured model for every stage unless the caller
+        # explicitly opts into a separate vision/judge model.
+        self.vision_model = os.getenv("HACIENDA_VISION_MODEL", self.model)
+        self.judge_model = os.getenv("HACIENDA_JUDGE_MODEL", self.model)
         self.timeout = int(os.getenv("HACIENDA_GEMMA_TIMEOUT", "90"))
 
     @property
@@ -166,12 +162,15 @@ class GemmaClient:
         max_tokens: int = 900,
         temperature: float = 0.35,
     ) -> str:
-        """Text-only fallback using minimax-m3 with guaranteed JSON output.
-        Used when Gemma-4-e4b fails to produce valid JSON."""
+        """Text-only fallback using the configured model.
+
+        This keeps submission behavior aligned with HACIENDA_GEMMA_MODEL and
+        avoids silently using an unapproved model.
+        """
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
 
-        fallback_model = "accounts/fireworks/models/minimax-m3"
+        fallback_model = self.model
         endpoint = self.base_url
         if not endpoint.endswith("/chat/completions"):
             endpoint = f"{endpoint}/chat/completions"

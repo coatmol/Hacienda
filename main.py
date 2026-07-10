@@ -31,11 +31,11 @@ from pipeline.evaluator import (
 # (best-of-N candidates, self-eval, weak-style regeneration) triple the API
 # calls per clip. Keep them off unless explicitly enabled for offline runs.
 DEEP_QA = os.getenv("HACIENDA_DEEP_QA", "") == "1"
-WORKERS = int(os.getenv("HACIENDA_WORKERS", "5"))
+WORKERS = int(os.getenv("HACIENDA_WORKERS", "3"))
 
 # Wall-clock governor: the harness kills the run at ~10 minutes. Leave margin,
 # and degrade gracefully instead of timing out with tasks unfinished.
-TIME_BUDGET = float(os.getenv("HACIENDA_TIME_BUDGET", "540"))  # seconds
+TIME_BUDGET = float(os.getenv("HACIENDA_TIME_BUDGET", "570"))  # seconds
 _START = time.monotonic()
 
 

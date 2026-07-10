@@ -9,11 +9,11 @@ Hacienda watches a video so you don't have to. It downloads clips, samples keyfr
 ## ✨ Features
 
 - **Grounded caption pipeline** — describe → self-verify against the frames → write each style from the verified description only, so style writers can't hallucinate visual details they never saw
-- **Adaptive frame sampling** — picks 8–24 keyframes (896 px, high quality) scaled to clip duration, chunked for long videos
+- **Adaptive frame sampling** — picks 8 high-quality keyframes (896 px) across each clip, chunked for long videos
 - **Audio transcription** — extracts speech via [Groq Whisper](https://groq.com/) (large-v3) when an audio track is present
 - **Multi-style captioning** — generates `formal`, `sarcastic`, `humorous_tech`, and `humorous_non_tech` captions per clip, each with tone-anchoring few-shot examples and structural variety across styles
-- **Rule enforcement with repair** — validates word count (15–30), single sentence, no hedging, no medium references, no tech words in `humorous_non_tech`; violations trigger targeted rewrite calls, never truncation
-- **Time-budget governor** — tasks run in parallel (5 workers) and generation degrades gracefully (`full` → `no_verify` → `direct`) as the deadline approaches, with results snapshotted after every task
+- **Rule enforcement with repair** — validates natural length, single sentence, no hedging, no medium references, no tech words in `humorous_non_tech`; violations trigger targeted rewrite calls, never truncation
+- **Time-budget governor** — tasks run in parallel (3 workers by default) and generation degrades gracefully (`full` → `no_verify` → `direct`) as the deadline approaches, with results snapshotted after every task
 - **Optional deep QA** — best-of-N candidate generation, cross-model judging, and weak-style regeneration for offline runs (`HACIENDA_DEEP_QA=1`)
 - **Resilient by construction** — retry with exponential backoff on 429/5xx, layered fallbacks (grounded → direct single-pass → single-frame → templates), every task always produces valid output
 
@@ -78,18 +78,21 @@ Create a `.env` file in the project root (already in `.gitignore`):
 ```env
 HACIENDA_GEMMA_BASE_URL=https://api.fireworks.ai/inference/v1
 HACIENDA_GEMMA_TOKEN=your-fireworks-api-key
+HACIENDA_GEMMA_MODEL=your-fireworks-model
 GROQ_API_KEY=your-groq-api-key
+HACIENDA_DEEP_QA=1
 ```
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `HACIENDA_GEMMA_BASE_URL` | — | Base URL of the Fireworks AI inference endpoint |
 | `HACIENDA_GEMMA_TOKEN` | — | Bearer token for Fireworks AI (API key) |
+| `HACIENDA_GEMMA_MODEL` | `gemma` | Model used for generation, vision, fallback, and judging unless overridden |
 | `GROQ_API_KEY` | — | API key for Groq's Whisper audio transcription |
-| `HACIENDA_VISION_MODEL` | `minimax-m3` | Vision model used for describe/verify and direct generation |
-| `HACIENDA_JUDGE_MODEL` | `glm-5p2` | Judge model for deep QA scoring (should differ from the vision model; falls back to it on failure) |
-| `HACIENDA_WORKERS` | `5` | Parallel task workers |
-| `HACIENDA_TIME_BUDGET` | `540` | Wall-clock budget in seconds; generation degrades as it runs out |
+| `HACIENDA_VISION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Optional override for describe/verify and direct generation |
+| `HACIENDA_JUDGE_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Optional override for deep QA scoring |
+| `HACIENDA_WORKERS` | `3` | Parallel task workers |
+| `HACIENDA_TIME_BUDGET` | `570` | Wall-clock budget in seconds; generation degrades as it runs out |
 | `HACIENDA_DEEP_QA` | off | Set to `1` to enable best-of-N + self-eval + regeneration |
 
 ### 3. Build & run with Docker Compose (recommended)
@@ -197,7 +200,7 @@ The `GemmaClient` loads the baked `.env` at runtime and ignores empty-string env
 | Container | Docker (slim base) |
 | Media processing | FFmpeg / FFprobe |
 | Audio transcription | Groq Whisper (large-v3) |
-| Vision + caption models | Fireworks AI (configurable; minimax-m3 default) |
+| Vision + caption models | Fireworks AI (configurable; defaults to `HACIENDA_GEMMA_MODEL`) |
 | HTTP client | Requests (retry with exponential backoff) |
 
 ---

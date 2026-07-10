@@ -211,8 +211,8 @@ def _write_style_caption(
         f"reference it, it exists only to show the tone): {example}\n\n"
         f"Here is a verified factual description of a video clip:\n{description}\n"
         + (f'Audio transcript from the clip: "{transcription}"\n' if transcription else "")
-        + "\nWrite ONE caption of 25 to 29 words — a single sentence; over 30 words "
-        "is automatically rejected. Write as if you personally watched the clip. "
+        + "\nWrite ONE natural caption, usually 12 to 24 words, as a single sentence. "
+        "Write as if you personally watched the clip. "
         "Use ONLY facts from the description and transcript. Be confident — never "
         "mention frames, video, models, or uncertainty, and never hedge (appears, "
         "seems, likely). Build any joke on the real subject, action, and setting "
@@ -264,7 +264,7 @@ def _generate_direct_captions(
 
     prompt += (
         "Write exactly ONE caption per requested style, based ONLY on what you see in the frames (and transcript). "
-        "Each caption MUST be a single English sentence of 25-29 words — captions over 30 words are automatically rejected, so count your words. "
+        "Each caption should be a natural single English sentence, usually 12-24 words. "
         "Be SPECIFIC — mention concrete details like colors, objects, settings, and actions. "
         "Never invent details not present in the evidence.\n"
         "Never use hedging words (appears, seems, likely, possibly, probably). "
@@ -287,10 +287,7 @@ def _generate_direct_captions(
                 image_paths=frame_paths,
                 max_tokens=2000,
                 temperature=0.55,
-                # Long clips (up to 120s) extract up to 24 frames; send 16 so
-                # temporal coverage survives, but degrade to 8 on the retry in
-                # case the larger payload is what made the first attempt fail.
-                max_images=16 if attempt == 0 else 8,
+                max_images=8,
             )
             data = extract_json_object(raw)
             return {style: str(data.get(style, "")) for style in styles}
@@ -326,8 +323,8 @@ def generate_style_candidates(
         f"For EACH requested style, write {candidates_per_style} DIFFERENT candidate captions. "
         "The candidates for a style must take genuinely different comedic angles — "
         "different subjects of the joke, different comparisons — not rewordings of one idea.\n"
-        "Each caption MUST be a single English sentence of 25-29 words (over 30 words is "
-        "automatically rejected), based ONLY on what you see in the frames (and transcript). "
+        "Each caption should be a natural single English sentence, usually 12-24 words, "
+        "based ONLY on what you see in the frames (and transcript). "
         "Never invent details not present in the "
         "evidence. Never use hedging words (appears, seems, likely, possibly, probably). "
         "Never mention the medium (video, clip, frame, footage).\n"
@@ -347,7 +344,7 @@ def generate_style_candidates(
                 image_paths=frame_paths,
                 max_tokens=3000,
                 temperature=0.9,
-                max_images=16 if attempt == 0 else 8,
+                max_images=8,
             )
             data = extract_json_object(raw)
             pool: Dict[str, List[str]] = {}
@@ -379,7 +376,7 @@ def _last_resort_captions(
             prompt = (
                 "You caption a short video from one representative frame"
                 + (f" and this audio transcript:\n\"{transcription}\"\n" if transcription else ".\n")
-                + "Write ONE caption per style, each a single English sentence of 25-29 words, "
+                + "Write ONE caption per style, each a natural single English sentence of 12-24 words, "
                 "describing only what is visible or heard. No hedging words, no mention of the medium.\n\n"
                 f"{_style_block(styles)}\n"
                 f"Return ONLY a raw JSON object. Format: {_json_format(styles)}"
@@ -441,10 +438,9 @@ def enforce_caption_rules(
 
 def _severity(caption: str, problems: List[str]) -> tuple:
     """Orders caption versions during repair: fewer violation types wins, and
-    at equal counts, being closer to the 15-30 word window wins — so a 36-word
-    caption revised to 32 words is progress worth keeping."""
+    at equal counts, being closer to the relaxed 8-32 word window wins."""
     words = len(caption.split())
-    distance = max(0, words - 30) + max(0, 15 - words)
+    distance = max(0, words - 32) + max(0, 8 - words)
     return (len(problems), distance)
 
 
@@ -452,10 +448,10 @@ def _find_violations(style: str, caption: str) -> List[str]:
     problems = []
     words = caption.split()
     count = len(words)
-    if count < 15:
-        problems.append(f"too short: {count} words (must be 15-30 words)")
-    elif count > 30:
-        problems.append(f"too long: {count} words (must be 15-30 words)")
+    if count < 8:
+        problems.append(f"too short: {count} words (must be at least 8 words)")
+    elif count > 32:
+        problems.append(f"too long: {count} words (must be no more than 32 words)")
 
     if re.search(r"[.!?]['\")\]]*\s+\S", caption):
         problems.append("contains more than one sentence (must be exactly one sentence)")
@@ -500,7 +496,7 @@ def _repair_caption(
         f"Style: {style} — {STYLE_RULES[style]}\n"
         f'Current caption: "{caption}" ({len(caption.split())} words)\n'
         f"Problems to fix: {'; '.join(problems)}\n"
-        "Rewrite the caption as exactly ONE sentence of NO MORE than 28 words (minimum 20), "
+        "Rewrite the caption as exactly ONE natural sentence, ideally 12-24 words and no more than 30, "
         "fixing every problem. If the original is too long, cut adjectives and secondary "
         "clauses — never add new content. Count your words before answering."
     )
@@ -517,7 +513,7 @@ def fallback_captions(
     styles: List[str], evidence: Optional[Dict[str, Any]] = None
 ) -> Dict[str, str]:
     # Absolute last resort when every model call has failed. Generic, but at
-    # least compliant with the hard rules (15-30 words, one sentence, no
+    # least compliant with the hard rules (reasonable length, one sentence, no
     # hedging, no mention of the medium, no tech words in humorous_non_tech).
     templates = {
         "formal": "A central subject carries out a continuous activity in a clearly lit setting while surrounding details remain steady and secondary to the main action throughout.",
