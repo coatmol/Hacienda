@@ -120,7 +120,7 @@ async def serve_index():
 
 
 @app.post("/api/generate")
-async def api_generate(req: GenerateRequest):
+def api_generate(req: GenerateRequest):
     """Accept a video URL, download it, and run the full captioning pipeline."""
     task_id = str(uuid4())[:8]
     temp_root = os.path.join(PROJECT_ROOT, "temp")
@@ -138,7 +138,7 @@ async def api_generate(req: GenerateRequest):
 
 
 @app.post("/api/upload")
-async def api_upload(file: UploadFile):
+def api_upload(file: UploadFile):
     """Accept a video file upload and run the full captioning pipeline."""
     task_id = str(uuid4())[:8]
     temp_root = os.path.join(PROJECT_ROOT, "temp")

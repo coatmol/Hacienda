@@ -2,7 +2,7 @@ import os
 import requests
 
 
-def transcribe_audio(file_path: str) -> dict:
+def transcribe_audio(file_path: str) -> str:
     """
     Transcribes an audio file using Groq's Whisper-large-v3 model.
     """
@@ -29,7 +29,7 @@ def transcribe_audio(file_path: str) -> dict:
         data = {
             "model": "whisper-large-v3",
             "temperature": "0",
-            "response_format": "verbose_json",
+            "response_format": "text",
         }
 
         print(f"Sending {os.path.basename(file_path)} to Groq for transcription...")
@@ -39,4 +39,4 @@ def transcribe_audio(file_path: str) -> dict:
         # Catch any errors (like invalid API keys or unsupported file formats)
         response.raise_for_status()
 
-        return response.json()
+        return response.text

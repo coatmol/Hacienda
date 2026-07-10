@@ -147,7 +147,9 @@ def _generate_from_evidence(
         "Each caption must be English, one sentence, 10-28 words, and faithful to the evidence. "
         "Style rules: formal is objective and professional; sarcastic is dry and lightly ironic; "
         "humorous_tech is funny with programming or technology references; "
-        "humorous_non_tech is funny with everyday humor and no tech jargon."
+        "humorous_non_tech is funny with everyday humor and no tech jargon. "
+        "CRITICAL: Output ONLY a raw JSON object. Do not output markdown or API envelopes. "
+        'Example format: {"formal": "caption...", "sarcastic": "caption...", "humorous_tech": "caption...", "humorous_non_tech": "caption..."}'
     )
 
     # --- NEW: Retry loop for transient JSON errors ---
@@ -192,21 +194,25 @@ def _repair_captions(
         f"{styles_note}"
     )
 
-    raw = client.chat(
-        prompt,
-        json.dumps(
-            {
-                "requested_styles": styles,
-                "evidence": evidence,
-                "draft_captions": captions,
-            },
-            ensure_ascii=True,
-        ),
-        max_tokens=700,
-        temperature=0.25,
-    )
-    data = extract_json_object(raw)
-    return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
+    try:
+        raw = client.chat(
+            prompt,
+            json.dumps(
+                {
+                    "requested_styles": styles,
+                    "evidence": evidence,
+                    "draft_captions": captions,
+                },
+                ensure_ascii=True,
+            ),
+            max_tokens=700,
+            temperature=0.25,
+        )
+        data = extract_json_object(raw)
+        return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
+    except Exception as e:
+        print(f"  Repair attempt failed: {e}. Keeping draft captions.")
+        return captions
 
 
 def enforce_caption_rules(

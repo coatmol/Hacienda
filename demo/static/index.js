@@ -49,7 +49,7 @@ function loadSettings() {
     if (saved) {
       gemmaConfig = { ...gemmaConfig, ...JSON.parse(saved) };
     }
-  } catch {}
+  } catch { }
   document.getElementById("cfgBaseUrl").value = gemmaConfig.baseUrl;
   document.getElementById("cfgToken").value = gemmaConfig.token;
   document.getElementById("cfgModel").value = gemmaConfig.model;
@@ -80,7 +80,7 @@ async function detectBackend() {
       document.getElementById("settingsBtn").style.display = "none";
       return;
     }
-  } catch {}
+  } catch { }
 
   // Client mode — check if Gemma credentials are configured
   backend = "client";
@@ -303,10 +303,10 @@ function extractJSON(text) {
   }
   try {
     return JSON.parse(cleaned);
-  } catch {}
+  } catch { }
   const match = cleaned.match(/(\{[\s\S]*\})/);
   if (match) {
-    try { return JSON.parse(match[1]); } catch {}
+    try { return JSON.parse(match[1]); } catch { }
   }
   throw new Error("No valid JSON in model response");
 }
@@ -394,7 +394,7 @@ async function callGemmaMultimodal(systemPrompt, userText, frameDataUrls, maxTok
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: gemmaConfig.model,
+      model: "accounts/fireworks/models/minimax-m3",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content },
@@ -447,7 +447,7 @@ async function generateAll() {
 
   const total = validInputs.length;
   let completed = 0;
-  statusText.textContent = `Processing ${total} clip${total > 1 ? "s" : ""}…`;
+  statusText.textContent = `Processing ${total} clip${total > 1 ? "s" : ""} simultaneously…`;
 
   // Create placeholder sections
   const sections = validInputs.map((_, i) => {
@@ -565,8 +565,8 @@ function renderResult(section, label, previewSrc, data) {
     <video class="video-preview" src="${escapeAttr(previewSrc)}" controls preload="metadata"></video>
     <div class="grid">
       ${styles
-        .map(
-          (s) => `
+      .map(
+        (s) => `
         <div class="card ${s.key}">
           <div class="card-label">
             ${s.label}
@@ -575,8 +575,8 @@ function renderResult(section, label, previewSrc, data) {
           <div class="card-text">${escapeHTML(data.captions?.[s.key] || "—")}</div>
         </div>
       `
-        )
-        .join("")}
+      )
+      .join("")}
     </div>
   `;
 }

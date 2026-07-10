@@ -17,7 +17,7 @@ For EACH of the captions provided, score it on two dimensions (0.0 to 1.0):
 STRICT RULES:
 - Output ONLY valid JSON, nothing else. No explanation, no reasoning, no preamble.
 - JSON must exactly match this structure:
-{"formal": {"accuracy": 0.0, "style_match": 0.0}, "sarcastic": {"accuracy": 0.0, "style_match": 0.0}, "humorous_tech": {"accuracy": 0.0, "style_match": 0.0}, "humorous_non_tech": {"accuracy": 0.0, "style_match": 0.0}}
+{"formal": {"accuracy": 0.8, "style_match": 0.9}, "sarcastic": {"accuracy": 0.7, "style_match": 0.8}, "humorous_tech": {"accuracy": 0.6, "style_match": 0.7}, "humorous_non_tech": {"accuracy": 0.9, "style_match": 0.9}}
 - Scores must be floats between 0.0 and 1.0.
 """
 

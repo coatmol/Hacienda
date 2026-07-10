@@ -35,9 +35,7 @@ if __name__ == "__main__":
                 else None
             )
             if transcription is not None:
-                print(
-                    f"Transcription for {task_id}: {transcription.get('text', 'No text found.')}"
-                )
+                print(f"Transcription for {task_id}: {transcription}")
 
             captions = generate_captions(
                 task, frame_chunks, duration, has_audio, client, transcription
