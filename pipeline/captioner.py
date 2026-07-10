@@ -114,21 +114,29 @@ def _collect_visual_evidence(
         "temporal_changes, mood, uncertainty, summary. Preserve uncertainty."
     )
 
-    raw = client.chat(
-        merge_prompt,
-        json.dumps(
-            {
-                "duration_seconds": round(duration, 1),
-                "has_audio": has_audio,
-                "chunks": chunk_observations,
-            },
-            ensure_ascii=True,
-        ),
-        max_tokens=900,
-        temperature=0.2,
+    user_text = json.dumps(
+        {
+            "duration_seconds": round(duration, 1),
+            "has_audio": has_audio,
+            "chunks": chunk_observations,
+        },
+        ensure_ascii=True,
     )
 
-    merged = extract_json_object(raw)
+    # Try Gemma first, then fallback to minimax-m3 for guaranteed JSON
+    for attempt_label, chat_fn in [("Gemma", client.chat), ("Fallback", client.fallback_chat)]:
+        try:
+            raw = chat_fn(merge_prompt, user_text, max_tokens=900, temperature=0.2)
+            merged = extract_json_object(raw)
+            merged["duration_seconds"] = round(duration, 1)
+            merged["has_audio"] = has_audio
+            merged["transcription"] = transcription
+            return merged
+        except Exception as e:
+            print(f"  Chunk merge ({attempt_label}) failed: {e}")
+
+    # If both fail, just use the first chunk's observation
+    merged = chunk_observations[0]
     merged["duration_seconds"] = round(duration, 1)
     merged["has_audio"] = has_audio
     merged["transcription"] = transcription
@@ -152,24 +160,30 @@ def _generate_from_evidence(
         'Example format: {"formal": "caption...", "sarcastic": "caption...", "humorous_tech": "caption...", "humorous_non_tech": "caption..."}'
     )
 
-    # --- NEW: Retry loop for transient JSON errors ---
+    user_text = json.dumps(
+        {"requested_styles": styles, "evidence": evidence},
+        ensure_ascii=True,
+    )
+
+    # Try Gemma twice, then fallback to minimax-m3 for guaranteed JSON
     for attempt in range(2):
         try:
-            raw = client.chat(
-                prompt,
-                json.dumps(
-                    {"requested_styles": styles, "evidence": evidence},
-                    ensure_ascii=True,
-                ),
-                max_tokens=700,
-                temperature=0.65,
-            )
+            raw = client.chat(prompt, user_text, max_tokens=700, temperature=0.65)
             data = extract_json_object(raw)
             return {style: str(data.get(style, "")) for style in styles}
         except Exception as e:
-            print(f"  Draft generation attempt {attempt + 1} failed: {e}")
+            print(f"  Draft generation (Gemma) attempt {attempt + 1} failed: {e}")
 
-    # Fallback if both attempts fail
+    # Fallback: use minimax-m3 with guaranteed JSON mode
+    try:
+        print("  Falling back to minimax-m3 for draft generation...")
+        raw = client.fallback_chat(prompt, user_text, max_tokens=700, temperature=0.65)
+        data = extract_json_object(raw)
+        return {style: str(data.get(style, "")) for style in styles}
+    except Exception as e:
+        print(f"  Fallback draft generation also failed: {e}")
+
+    # Last resort: evidence-based templates
     return fallback_captions(styles, evidence)
 
 
@@ -194,25 +208,27 @@ def _repair_captions(
         f"{styles_note}"
     )
 
-    try:
-        raw = client.chat(
-            prompt,
-            json.dumps(
-                {
-                    "requested_styles": styles,
-                    "evidence": evidence,
-                    "draft_captions": captions,
-                },
-                ensure_ascii=True,
-            ),
-            max_tokens=700,
-            temperature=0.25,
-        )
-        data = extract_json_object(raw)
-        return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
-    except Exception as e:
-        print(f"  Repair attempt failed: {e}. Keeping draft captions.")
-        return captions
+    user_text = json.dumps(
+        {
+            "requested_styles": styles,
+            "evidence": evidence,
+            "draft_captions": captions,
+        },
+        ensure_ascii=True,
+    )
+
+    # Try Gemma first, then fallback to minimax-m3
+    for attempt_label, chat_fn in [("Gemma", client.chat), ("Fallback", client.fallback_chat)]:
+        try:
+            raw = chat_fn(prompt, user_text, max_tokens=700, temperature=0.25)
+            data = extract_json_object(raw)
+            return {style: str(data.get(style, captions.get(style, ""))) for style in styles}
+        except Exception as e:
+            print(f"  Repair ({attempt_label}) failed: {e}. Trying next...")
+
+    # If both fail, keep the draft captions as-is
+    print("  All repair attempts failed. Keeping draft captions.")
+    return captions
 
 
 def enforce_caption_rules(

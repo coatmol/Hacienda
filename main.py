@@ -22,6 +22,7 @@ if __name__ == "__main__":
         task_id = task["task_id"]
         video_path = f"temp/clips/{task_id}.mp4"
 
+        evidence = None
         try:
             reader.download_video(task["video_url"], video_path)
             frame_chunks, duration = extractor.extract_frame_chunks(
@@ -73,7 +74,7 @@ if __name__ == "__main__":
                     )
         except Exception as exc:
             print(f"Task {task_id} failed, writing fallback captions: {exc}")
-            captions = fallback_captions(task.get("styles") or DEFAULT_STYLES)
+            captions = fallback_captions(task.get("styles") or DEFAULT_STYLES, evidence)
 
         results.append({"task_id": task_id, "captions": captions})
         reader.write_results(results, output_path)

@@ -113,6 +113,46 @@ class GemmaClient:
         print(f"DEBUG {vision_model} (VISION) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 
+    def fallback_chat(
+        self,
+        system_prompt: str,
+        user_text: str,
+        max_tokens: int = 900,
+        temperature: float = 0.35,
+    ) -> str:
+        """Text-only fallback using minimax-m3 with guaranteed JSON output.
+        Used when Gemma-4-e4b fails to produce valid JSON."""
+        if not self.available:
+            raise RuntimeError("Gemma proxy is not configured.")
+
+        fallback_model = "accounts/fireworks/models/minimax-m3"
+        endpoint = self.base_url
+        if not endpoint.endswith("/chat/completions"):
+            endpoint = f"{endpoint}/chat/completions"
+
+        payload = {
+            "model": fallback_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        data = response.json()
+        raw_text = data["choices"][0]["message"]["content"].strip()
+        print(f"DEBUG {fallback_model} (FALLBACK) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
+        return raw_text
+
 
 def extract_json_object(text: str) -> Dict[str, Any]:
     """Robust JSON extraction inspired by competitor's fallback logic."""

@@ -13,10 +13,12 @@ def download_video(url, output_path):
     print(f"Downloading video from {url} to {output_path}...")
 
     folder_path = os.path.dirname(output_path)
-    if os.path.exists(output_path): # Skip download if file already exists for faster testing
+    if os.path.exists(
+        output_path
+    ):  # Skip download if file already exists for faster testing
         print(f"File {output_path} already exists. Skipping download.")
         return
-    
+
     if folder_path:
         os.makedirs(folder_path, exist_ok=True)
 
