@@ -76,10 +76,10 @@ class GemmaClient:
             endpoint = f"{endpoint}/chat/completions"
 
         # Prevent overwhelming the model with too many image tokens
-        if len(image_paths) > 5:
-            # Evenly sample 5 frames across the full range
-            indices = [0, len(image_paths)//4, len(image_paths)//2, 3*len(image_paths)//4, len(image_paths)-1]
-            image_paths = [image_paths[i] for i in indices]
+        if len(image_paths) > 8:
+            # Evenly sample 8 frames across the full range
+            step = max(1, len(image_paths) // 8)
+            image_paths = [image_paths[i * step] for i in range(8)]
 
         content: List[Dict[str, Any]] = [{"type": "text", "text": user_text}]
         for image_path in image_paths:
