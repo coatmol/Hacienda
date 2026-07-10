@@ -5,12 +5,9 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
-ARG HACIENDA_GEMMA_BASE_URL=""
-ARG HACIENDA_GEMMA_TOKEN=""
-ARG HACIENDA_GEMMA_MODEL="gemma"
-ENV HACIENDA_GEMMA_BASE_URL=${HACIENDA_GEMMA_BASE_URL}
-ENV HACIENDA_GEMMA_TOKEN=${HACIENDA_GEMMA_TOKEN}
-ENV HACIENDA_GEMMA_MODEL=${HACIENDA_GEMMA_MODEL}
+# Credentials come from the baked .env file (COPY . . below), loaded at
+# runtime by GemmaClient. Do NOT preset them as ENV here: empty-string ENV
+# defaults shadow the .env file and silently disable every model call.
 ENV PYTHONUNBUFFERED=1
 
 # "pipeline" = batch mode (default), "demo" = web UI

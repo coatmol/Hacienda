@@ -6,7 +6,8 @@ from typing import Dict, List, Tuple
 
 MAX_FRAMES_PER_CLIP = 24
 CHUNK_SECONDS = 60.0
-FRAME_WIDTH = 768
+FRAME_WIDTH = 896
+FRAME_QUALITY = "3"
 
 
 def get_duration(video_path: str) -> float:
@@ -84,7 +85,7 @@ def extract_frames(
                 "-vf",
                 f"scale='min({FRAME_WIDTH},iw)':-2",
                 "-q:v",
-                "5",
+                FRAME_QUALITY,
                 out_path,
             ],
             capture_output=True,
@@ -121,7 +122,7 @@ def extract_frame_chunks(video_path: str, out_dir: str) -> Tuple[List[Dict], flo
                     "-vf",
                     f"scale='min({FRAME_WIDTH},iw)':-2",
                     "-q:v",
-                    "5",
+                    FRAME_QUALITY,
                     out_path,
                 ],
                 capture_output=True,
