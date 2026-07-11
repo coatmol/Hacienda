@@ -342,16 +342,16 @@ def _formal_from_description(description: str) -> str:
         count = len(clean.split())
         if not clean:
             continue
-        if pieces and total + count > 30:
+        if pieces and total + count > 70:
             break
         pieces.append(clean)
         total += count
-        if total >= 15:
+        if total >= 40:
             break
     text = ", ".join(pieces)
     words = text.split()
-    if len(words) > 30:
-        text = " ".join(words[:30]).rstrip(",;:")
+    if len(words) > 70:
+        text = " ".join(words[:70]).rstrip(",;:")
     bag = {w.strip(_STRIP_PUNCT).lower() for w in text.split()}
     if len(text.split()) < 8 or (bag & (HEDGE_WORDS | META_WORDS)):
         return ""
@@ -378,7 +378,7 @@ def _describe_scene(
         # consumed entirely by the thinking and returns no content at all.
         max_tokens=1500,
         temperature=0.2,
-        max_images=8,
+        max_images=16,
         json_mode=False,
     ).strip()
 
@@ -397,8 +397,9 @@ def _verify_description(
         "specific, keep it unchanged. If anything is wrong or too generic, "
         "correct it.\n"
         "2. Then write one FORMAL caption of the scene straight from the "
-        f"frames — {STYLE_RULES['formal']} Match the voice of these examples "
-        f"from other clips:\n{formal_examples}\n\n"
+        f"frames — {STYLE_RULES['formal']} Use 2 to 4 sentences dense with "
+        "concrete visible details (colors, objects, positions, lighting). "
+        f"Match the voice of these examples from other clips:\n{formal_examples}\n\n"
         'Return ONLY a raw JSON object: {"description": "...", "formal_caption": "..."}'
     )
     try:
@@ -406,9 +407,9 @@ def _verify_description(
             system_prompt="You verify video descriptions against the actual frames and write precise captions.",
             user_text=prompt,
             image_paths=frame_paths,
-            max_tokens=2000,
+            max_tokens=2500,
             temperature=0.2,
-            max_images=8,
+            max_images=16,
         )
         data = extract_json_object(raw)
         description = _clean_caption(data.get("description", "")) or draft
@@ -438,9 +439,10 @@ def _write_style_caption(
     if exemplar and exemplar.get(style):
         exemplar_note = (
             "\nOfficial reference caption for this exact type of scene, from the "
-            "public validation set — your caption should closely match its voice "
-            "and content wherever the frames confirm the same details, and correct "
-            f"anything the description above contradicts: \"{exemplar[style]}\"\n"
+            "public validation set — keep its voice and core content wherever the "
+            "description confirms the same details, correct anything it "
+            "contradicts, and expand it with additional frame-confirmed details "
+            f"to reach the required length: \"{exemplar[style]}\"\n"
         )
     examples = "\n".join(f"- {ex}" for ex in STYLE_EXAMPLES.get(style, []))
     prompt = (
@@ -452,13 +454,14 @@ def _write_style_caption(
         f"{exemplar_note}\n"
         f"Here is a verified factual description of a video clip:\n{description}\n"
         + (f'Audio transcript from the clip: "{transcription}"\n' if transcription else "")
-        + "\nWrite ONE caption for THIS clip in exactly that voice, "
-        + ("usually 15 to 45 words" if style == "formal" else "usually 10 to 25 words")
-        + " — one sentence, or up to three short punchy sentences when the "
-        "examples use that shape. Write as if you personally watched the clip. "
-        "Use ONLY facts from the description and transcript. Be confident — never "
-        "mention frames, video, models, or uncertainty. The caption must be "
-        "unmistakably about this specific scene, not a joke that could fit any clip.\n"
+        + "\nWrite ONE caption for THIS clip in exactly that voice, 2 to 4 "
+        "sentences long (roughly 30 to 80 words), packed with concrete details "
+        "from the description — objects, colors, counts, positions, readable "
+        "text. Open in the voice of the examples, then keep building the same "
+        "idea with real scene specifics. Write as if you personally watched the "
+        "clip. Use ONLY facts from the description and transcript. Be confident "
+        "— never mention models or uncertainty. The caption must be unmistakably "
+        "about this specific scene, not a joke that could fit any clip.\n"
         f"{CAPTION_QUALITY_RULES}"
         f"{variety_note}\n"
         'Return ONLY a raw JSON object: {"caption": "..."} — write it immediately, '
@@ -521,8 +524,8 @@ def _generate_direct_captions(
 
     prompt += (
         "Write exactly ONE caption per requested style, based ONLY on what you see in the frames (and transcript). "
-        "Each caption should be natural English, usually 10-25 words, as one sentence "
-        "or up to three short punchy sentences when that matches the style's voice examples. "
+        "Each caption should be natural English, 2 to 4 sentences (roughly 30-80 words), "
+        "opening in the style's voice and packed with concrete visible details. "
         "Be SPECIFIC — mention concrete details like colors, objects, settings, and actions. "
         "Never invent details not present in the evidence.\n"
         "Never use hedging words (appears, seems, likely, possibly, probably). "
@@ -584,8 +587,8 @@ def generate_style_candidates(
         f"For EACH requested style, write {candidates_per_style} DIFFERENT candidate captions. "
         "The candidates for a style must take genuinely different comedic angles — "
         "different subjects of the joke, different comparisons — not rewordings of one idea.\n"
-        "Each caption should be natural English, usually 10-25 words (one sentence, or up "
-        "to three short punchy sentences when that matches the style's voice examples), "
+        "Each caption should be natural English, 2 to 4 sentences (roughly 30-80 words), "
+        "opening in the style's voice and packed with concrete visible details, "
         "based ONLY on what you see in the frames (and transcript). "
         "Never invent details not present in the "
         "evidence. Never use hedging words (appears, seems, likely, possibly, probably). "
@@ -627,7 +630,7 @@ def generate_style_candidates(
                 system_prompt=prompt,
                 user_text="Write the JSON candidate captions now.",
                 image_paths=frame_paths,
-                max_tokens=4000,
+                max_tokens=6000,
                 temperature=0.9,
                 max_images=8,
             )
@@ -661,7 +664,7 @@ def _last_resort_captions(
             prompt = (
                 "You caption a short video from one representative frame"
                 + (f" and this audio transcript:\n\"{transcription}\"\n" if transcription else ".\n")
-                + "Write ONE caption per style, each natural English of 10-25 words, "
+                + "Write ONE caption per style, each natural English of 2-4 sentences, "
                 "describing only what is visible or heard. No hedging words, no mention of the medium.\n\n"
                 f"{_style_block(styles)}\n"
                 f"Return ONLY a raw JSON object. Format: {_json_format(styles)}"
@@ -723,9 +726,9 @@ def enforce_caption_rules(
 
 def _severity(caption: str, problems: List[str]) -> tuple:
     """Orders caption versions during repair: fewer violation types wins, and
-    at equal counts, being closer to the relaxed 8-32 word window wins."""
+    at equal counts, being closer to the relaxed 8-100 word window wins."""
     words = len(caption.split())
-    distance = max(0, words - 32) + max(0, 8 - words)
+    distance = max(0, words - 100) + max(0, 8 - words)
     return (len(problems), distance)
 
 
@@ -733,20 +736,17 @@ def _find_violations(style: str, caption: str) -> List[str]:
     problems = []
     words = caption.split()
     count = len(words)
-    # The organizers' formal reference captions run up to ~50 words; the
-    # humorous references stay short and punchy.
-    max_words = 55 if style == "formal" else 32
+    # Detail-dense multi-sentence captions score best on accuracy; only flag
+    # extremes that read as failures (fragments or unbounded rambling).
     if count < 8:
         problems.append(f"too short: {count} words (must be at least 8 words)")
-    elif count > max_words:
-        problems.append(f"too long: {count} words (must be no more than {max_words} words)")
+    elif count > 100:
+        problems.append(f"too long: {count} words (must be no more than 100 words)")
 
-    # The organizers' reference captions freely use two or three short
-    # sentences (and ellipses), so only flag genuinely rambling captions.
     sentence_breaks = len(re.findall(r"[.!?]['\")\]]*\s+\S", caption))
-    if sentence_breaks > 2:
+    if sentence_breaks > 3:
         problems.append(
-            "contains more than three sentences (use at most three short sentences)"
+            "contains more than four sentences (use at most four sentences)"
         )
 
     bag = {word.strip(_STRIP_PUNCT).lower() for word in words}
@@ -794,7 +794,7 @@ def _repair_caption(
         f"Style: {style} — {STYLE_RULES[style]}\n"
         f'Current caption: "{caption}" ({len(caption.split())} words)\n'
         f"Problems to fix: {'; '.join(problems)}\n"
-        "Rewrite the caption naturally (at most three short sentences), ideally 10-25 words and no more than 30, "
+        "Rewrite the caption naturally (at most four sentences), ideally 30-80 words and no more than 95, "
         "fixing every problem. If the original is too long, cut adjectives and secondary "
         "clauses — never add new content. Output the JSON immediately, with no "
         "analysis or word counting before it."

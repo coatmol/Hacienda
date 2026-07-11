@@ -4,7 +4,7 @@ import os
 import subprocess
 from typing import Dict, List, Tuple
 
-MAX_FRAMES_PER_CLIP = 8
+MAX_FRAMES_PER_CLIP = 16
 CHUNK_SECONDS = 60.0
 FRAME_WIDTH = 896
 FRAME_QUALITY = "3"
