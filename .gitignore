@@ -2,6 +2,7 @@ __pycache__/
 temp/
 output/
 scripts/
+bench_temp/
 
 .env
 temp_repo/

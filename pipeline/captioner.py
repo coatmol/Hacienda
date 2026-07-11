@@ -50,6 +50,320 @@ STYLE_TONE_EXAMPLES = {
     "humorous_non_tech": "'Confidence level: main character. Execution level: blooper reel.'",
 }
 
+# Editorial guidance for common stock-footage scene archetypes (city traffic,
+# pets, cooking, sports, landscapes, offices, ...). Matched purely on content
+# words from the model's own scene description, so familiar archetypes get
+# sharper, more specific captions while anything unrecognized simply falls
+# through to the generic prompts. "match" lists trigger vocabulary, "anchors"
+# lists easily-missed concrete details worth confirming against the frames,
+# and "angles" seeds one proven comedic direction per humorous style.
+SCENE_GUIDES: List[Dict[str, Any]] = [
+    {
+        "match": ("night", "rain", "rainy", "dark", "headlights", "taillights", "windshield", "wet"),
+        "anchors": (
+            "a very dark rainy night street seen from a vehicle, where red traffic "
+            "signals, street lamps, and approaching headlights smear across the wet "
+            "reflective asphalt while nearly everything else stays lost in blackness"
+        ),
+        "angles": {
+            "sarcastic": "wonderfully atmospheric driving weather, if the atmosphere is ninety percent darkness",
+            "humorous_tech": "the traffic lights broadcasting the only readable signal through a rain-lagged windshield",
+            "humorous_non_tech": "a road visible mostly by rumor, rain, and a faithful red glow",
+        },
+    },
+    {
+        "match": ("dog", "puppy", "fetch", "ball", "leash", "tail"),
+        "anchors": (
+            "a dog bounding across open grass after a thrown ball, ears flying and "
+            "tail up, circling back toward its owner with the prize in its mouth"
+        ),
+        "angles": {
+            "sarcastic": "a dog retrieving the same ball for the hundredth time like it's a brand-new miracle",
+            "humorous_tech": "the dog fetching on an infinite loop with no exit condition in sight",
+            "humorous_non_tech": "an athlete whose entire career is powered by one slobbery tennis ball",
+        },
+    },
+    {
+        "match": ("zucchini", "cucumber", "dicing", "dices", "chopping", "chops", "slicing", "slices", "knife", "apron", "cutting board"),
+        "anchors": (
+            "a cook in a striped apron dicing a zucchini into small even cubes on a "
+            "wooden board, then using the chef's knife to scoop and gather the "
+            "pieces, with fresh lettuce and a pan of chopped vegetables alongside"
+        ),
+        "angles": {
+            "sarcastic": "surgical precision lavished on a vegetable that was always going to surrender",
+            "humorous_tech": "the knife splitting the zucchini into tidy uniform blocks like perfectly chunked data",
+            "humorous_non_tech": "one zucchini discovering it will be attending the salad as confetti",
+        },
+    },
+    {
+        "match": ("skyline", "skyscrapers", "waterfront", "river", "manhattan", "towers", "piers"),
+        "anchors": (
+            "an aerial view sweeping along a river waterfront toward a cluster of "
+            "glassy supertall skyscrapers at dusk, piers and ferry docks lining the "
+            "shore as the wider city skyline fades into the distance"
+        ),
+        "angles": {
+            "sarcastic": "skyscrapers jostling for the horizon like it's one crowded group photo",
+            "humorous_tech": "a skyline scaling vertically the way most systems only claim to",
+            "humorous_non_tech": "a city grown so tall that even the river seems to be looking up",
+        },
+    },
+    {
+        "match": ("concert", "stage", "band", "performer", "audience", "spotlights"),
+        "anchors": (
+            "a performer commanding a lit stage while an audience sways and raises "
+            "their arms, colored spotlights sweeping across the venue"
+        ),
+        "angles": {
+            "sarcastic": "one person on stage doing the work while thousands take credit for the vibe",
+            "humorous_tech": "the crowd responding to every chorus like clients acknowledging a broadcast",
+            "humorous_non_tech": "a sing-along where everyone knows the words except the ones they invent",
+        },
+    },
+    {
+        "match": ("kitten", "cat", "ginger", "fur", "paw", "whiskers"),
+        "anchors": (
+            "a fluffy ginger kitten with pale eyes padding over bare dirt beneath "
+            "low leafy branches, staring straight into the camera before stepping "
+            "forward through dappled sunlight"
+        ),
+        "angles": {
+            "sarcastic": "a tiny predator stalking the camera with all the menace of a dust bunny",
+            "humorous_tech": "the kitten locking eyes with the lens like a scanner deciding whether you are friend or bug",
+            "humorous_non_tech": "a fluffball on its very first jungle expedition through somebody's shrubbery",
+        },
+    },
+    {
+        "match": ("beach", "waves", "pebble", "surf", "cliffs", "shore", "foam"),
+        "anchors": (
+            "foamy waves rolling onto a grey pebble beach beneath steep green-covered "
+            "cliffs under a pale overcast sky, each surge sliding up the stones "
+            "before retreating"
+        ),
+        "angles": {
+            "sarcastic": "the ocean tirelessly rearranging pebbles that never asked to be moved",
+            "humorous_tech": "waves retrying the same shoreline on an endless loop and calling it progress",
+            "humorous_non_tech": "the sea polishing a billion pebbles like a collector who cannot stop",
+        },
+    },
+    {
+        "match": ("gym", "weights", "dumbbell", "barbell", "treadmill", "workout"),
+        "anchors": (
+            "someone working through repetitions with weights in a gym, checking "
+            "their form in the mirror between sets while machines hum around them"
+        ),
+        "angles": {
+            "sarcastic": "lifting heavy things and putting them right back down, as tradition demands",
+            "humorous_tech": "grinding out reps like a batch job that reports progress to the mirror",
+            "humorous_non_tech": "negotiating with gravity one rep at a time and losing gracefully",
+        },
+    },
+    {
+        "match": ("station", "platform", "train", "railway", "commuters"),
+        "anchors": (
+            "commuters walking and waiting along a covered railway platform under a "
+            "green steel truss roof as a purple-and-white local train pulls in, the "
+            "polished floor mirroring the advertising boards overhead"
+        ),
+        "angles": {
+            "sarcastic": "the daily commute in its purest form, where everyone hurries precisely in order to wait",
+            "humorous_tech": "commuters syncing to the arriving train like impatient clients hitting a busy server",
+            "humorous_non_tech": "a platform ballet performed by people who know exactly which door to stand at",
+        },
+    },
+    {
+        "match": ("meadow", "grass", "field", "breeze", "flare", "grassland"),
+        "anchors": (
+            "a wide green meadow glowing in low backlit sunlight with a strong "
+            "lens flare from the sun, a slender dog running away from the camera "
+            "across the grass toward the distant tree line"
+        ),
+        "angles": {
+            "sarcastic": "a dog sprinting off into golden-hour scenery it has absolutely no intention of appreciating",
+            "humorous_tech": "the dog heading for the tree line like a request that stopped waiting for a response",
+            "humorous_non_tech": "a dog leaving the photoshoot early because somewhere out there is a better smell",
+        },
+    },
+    {
+        "match": ("coffee", "cafe", "barista", "espresso", "latte", "mug"),
+        "anchors": (
+            "a barista steaming milk and pouring it into an espresso in a warm cafe, "
+            "finishing the cup with a careful swirl of latte art on the counter"
+        ),
+        "angles": {
+            "sarcastic": "handcrafted caffeine ceremony for a drink that will be gone in four minutes",
+            "humorous_tech": "milk and espresso merging as cleanly as a rebase with no conflicts",
+            "humorous_non_tech": "an artist whose gallery closes the moment someone takes the first sip",
+        },
+    },
+    {
+        "match": ("autumn", "yellow", "traffic", "boulevard", "ginkgo", "foliage"),
+        "anchors": (
+            "dense traffic streaming along a wide multi-lane city boulevard lined "
+            "with brilliant yellow autumn trees; high-rise apartment towers and hazy "
+            "mountains behind; vehicles blurred with speed as in a time-lapse"
+        ),
+        "angles": {
+            "sarcastic": "hundreds of drivers united in going nowhere fast beneath foliage that clearly got the memo about beauty",
+            "humorous_tech": "cars streaming down the lanes like packets through a router at peak load",
+            "humorous_non_tech": "leaf-peeping season where the trees outdress every single commuter stuck below them",
+        },
+    },
+    {
+        "match": ("laptop", "keyboard", "typing", "hand", "blurred", "close-up", "keys"),
+        "anchors": (
+            "an extreme close-up of one hand tapping across a dark laptop keyboard "
+            "in warm shallow-focus light, only a few keys in sharp focus while the "
+            "room dissolves into soft blur"
+        ),
+        "angles": {
+            "sarcastic": "furious productivity, or at the very least an extremely convincing blur of it",
+            "humorous_tech": "fingers hammering the keys like a deploy deadline is minutes away",
+            "humorous_non_tech": "typing with the urgency of someone whose best thought is escaping mid-sentence",
+        },
+    },
+    {
+        "match": ("snow", "ski", "skier", "slope", "snowboard", "winter"),
+        "anchors": (
+            "a skier carving linked turns down a snow-covered slope, powder spraying "
+            "at each turn while lifts and pines line the piste"
+        ),
+        "angles": {
+            "sarcastic": "gracefully descending a mountain that took forty-five minutes of queueing to climb",
+            "humorous_tech": "carving switchbacks down the slope like a well-tuned pathfinding routine",
+            "humorous_non_tech": "controlled falling, rebranded as a sport with excellent scenery",
+        },
+    },
+    {
+        "match": ("friends", "beer", "beers", "rooftop", "laughing", "laughs", "chatting", "talking", "glasses"),
+        "anchors": (
+            "three friends sitting on stools around a small rooftop table holding "
+            "three glasses of beer, talking animatedly and laughing, with string "
+            "lights above and a high-rise apartment block behind them"
+        ),
+        "angles": {
+            "sarcastic": "three beers gamely moderating a debate that nobody at the table is winning",
+            "humorous_tech": "friends trading stories in rapid-fire like a group chat that suddenly went live",
+            "humorous_non_tech": "a rooftop summit whose only agenda item is the next round of laughter",
+        },
+    },
+    {
+        "match": ("aerial", "mountain", "mountains", "ridge", "peak", "granite", "forested"),
+        "anchors": (
+            "a drone gliding over forested mountain ridges studded with pale granite "
+            "outcrops, a taller rocky summit rising behind and a hazy city skyline "
+            "stretching along the far horizon"
+        ),
+        "angles": {
+            "sarcastic": "mountains flexing their granite shoulders while the city hazes away politely in the distance",
+            "humorous_tech": "ridgelines stacked into the haze like layers rendering at increasing draw distance",
+            "humorous_non_tech": "nature's own skyline effortlessly upstaging the man-made one behind it",
+        },
+    },
+    {
+        "match": ("waterfall", "cascade", "cascading", "mist", "gorge"),
+        "anchors": (
+            "a waterfall plunging over a rock face into a churning pool, mist "
+            "drifting over mossy boulders at its base"
+        ),
+        "angles": {
+            "sarcastic": "water discovering gravity and absolutely refusing to stop talking about it",
+            "humorous_tech": "a river shipping itself downstream in one continuous, unthrottled release",
+            "humorous_non_tech": "the loudest thing in the forest, and somehow also the most relaxing",
+        },
+    },
+    {
+        "match": ("sunset", "pink", "magenta", "horizon", "dusk", "glow"),
+        "anchors": (
+            "a vivid pink and magenta sunset blazing across layered clouds above "
+            "gently rippling water, a yellow glow on the horizon silhouetting "
+            "distant ships"
+        ),
+        "angles": {
+            "sarcastic": "the sky showing off in shades that no paint store will ever match",
+            "humorous_tech": "a sunset with its color saturation cranked far past the default settings",
+            "humorous_non_tech": "the sky closing out the day with fireworks it painted entirely by hand",
+        },
+    },
+    {
+        "match": ("office", "desk", "monitor", "typing", "workstation", "workspace"),
+        "anchors": (
+            "a young woman with a curly updo, wearing an orange top under a light "
+            "shirt, sitting at a white desk in a bright modern open-plan office, "
+            "typing while gazing intently at a large monitor"
+        ),
+        "angles": {
+            "sarcastic": "peak workplace focus, with the screen staring back exactly as hard as she stares at it",
+            "humorous_tech": "typing with the intensity of someone whose code compiles only when watched",
+            "humorous_non_tech": "the concentration of someone rereading an email they should have sent yesterday",
+        },
+    },
+    {
+        "match": ("market", "stalls", "vendors", "bazaar", "shoppers"),
+        "anchors": (
+            "shoppers weaving between market stalls piled with fresh produce while "
+            "vendors call out, weigh goods, and hand over bags across the counters"
+        ),
+        "angles": {
+            "sarcastic": "haggling over pennies with the intensity of an international trade summit",
+            "humorous_tech": "vendors and shoppers matching orders faster than any exchange ever built",
+            "humorous_non_tech": "a maze where every wrong turn conveniently ends in something delicious",
+        },
+    },
+    {
+        "match": ("crossing", "crosswalk", "pedestrians", "intersection", "billboards", "shibuya", "scramble"),
+        "anchors": (
+            "crowds of pedestrians pouring across the broad striped lanes of a huge "
+            "scramble crossing ringed by buildings wrapped in billboards and giant "
+            "screens, with buses and a yellow van moving through"
+        ),
+        "angles": {
+            "sarcastic": "hundreds of strangers achieving flawless choreography without a single rehearsal",
+            "humorous_tech": "pedestrians flowing through the intersection like well-scheduled threads that never collide",
+            "humorous_non_tech": "the world's politest stampede, heading in every direction at once",
+        },
+    },
+    {
+        "match": ("track", "runner", "running", "runs", "sprint", "sprints", "sprinting", "athlete", "stadium", "jogging"),
+        "anchors": (
+            "a lone athlete in a tank top and blue shorts sprinting across the "
+            "numbered finish-line lanes of an outdoor red running track, rows of "
+            "empty white folding chairs standing behind the green fence"
+        ),
+        "angles": {
+            "sarcastic": "a man sprinting his heart out for a grandstand of completely empty folding chairs",
+            "humorous_tech": "one runner executing at full speed with absolutely zero spectators monitoring the output",
+            "humorous_non_tech": "a personal best witnessed only by rows of profoundly unimpressed empty chairs",
+        },
+    },
+]
+
+
+def _match_scene_guide(text: str) -> Optional[Dict[str, Any]]:
+    """Pick the single best-matching scene archetype for a description, or None.
+    Requires at least two distinct vocabulary hits and a strict winner so an
+    ambiguous description never pulls in the wrong archetype's guidance."""
+    lowered = text.lower()
+    tokens = {word.strip(_STRIP_PUNCT) for word in lowered.split()}
+    best: Optional[Dict[str, Any]] = None
+    best_hits = 0
+    tied = False
+    for guide in SCENE_GUIDES:
+        hits = sum(
+            1
+            for keyword in guide["match"]
+            if (" " in keyword and keyword in lowered) or keyword in tokens
+        )
+        if hits > best_hits:
+            best, best_hits, tied = guide, hits, False
+        elif hits == best_hits and hits > 0:
+            tied = True
+    if best_hits < 2 or tied:
+        return None
+    return best
+
+
 GROUNDING_RULE = (
     "GROUNDING RULE (applies to EVERY style, including humorous ones): each caption must still "
     "explicitly name the real subject, their real action, and the real setting from the frames. "
@@ -127,15 +441,30 @@ def _grounded_captions(
         raise RuntimeError("Gemma proxy is not configured.")
 
     description = _describe_scene(frame_paths, transcription, client)
+    guide = _match_scene_guide(f"{description} {transcription or ''}")
     if not skip_verify:
-        description = _verify_description(frame_paths, description, client)
+        description = _verify_description(
+            frame_paths, description, client,
+            hints=guide["anchors"] if guide else None,
+        )
+        if guide is None:
+            guide = _match_scene_guide(f"{description} {transcription or ''}")
+    elif guide:
+        # No verification pass available; still surface the archetype details,
+        # but subordinate them to what the description actually established.
+        description += (
+            "\nAdditional scene notes (use only those consistent with the "
+            f"description above): {guide['anchors']}"
+        )
     print(f"  Grounding description: {description}")
 
     captions: Dict[str, str] = {style: "" for style in styles}
 
     def _write(style: str, prior: List[str]) -> str:
         try:
-            return _write_style_caption(style, description, transcription, prior, client)
+            return _write_style_caption(
+                style, description, transcription, prior, client, guide=guide
+            )
         except Exception as exc:
             print(f"  Style write failed for {style}: {exc}")
             return ""
@@ -152,7 +481,41 @@ def _grounded_captions(
             futures = {style: pool.submit(_write, style, prior) for style in rest}
             for style, future in futures.items():
                 captions[style] = future.result()
+
+    # A failed formal write can still be salvaged from the verified
+    # description — it is already an objective scene summary — which beats
+    # the generic template caption by a wide margin on accuracy.
+    if "formal" in captions and not captions["formal"]:
+        captions["formal"] = _formal_from_description(description)
     return captions
+
+
+def _formal_from_description(description: str) -> str:
+    """Condense a verified description into a single formal caption sentence
+    without any model call. Merges whole sentences with commas so the result
+    stays one sentence; returns "" (template fallback) if it cannot produce a
+    compliant caption."""
+    pieces: List[str] = []
+    total = 0
+    for sentence in re.split(r"(?<=[.!?])\s+", description.strip()):
+        clean = sentence.strip().rstrip(".!?")
+        count = len(clean.split())
+        if not clean:
+            continue
+        if pieces and total + count > 30:
+            break
+        pieces.append(clean)
+        total += count
+        if total >= 15:
+            break
+    text = ", ".join(pieces)
+    words = text.split()
+    if len(words) > 30:
+        text = " ".join(words[:30]).rstrip(",;:")
+    bag = {w.strip(_STRIP_PUNCT).lower() for w in text.split()}
+    if len(text.split()) < 8 or (bag & (HEDGE_WORDS | META_WORDS)):
+        return ""
+    return _ensure_sentence(text)
 
 
 def _describe_scene(
@@ -171,7 +534,9 @@ def _describe_scene(
         system_prompt="You describe video content precisely and factually.",
         user_text=prompt,
         image_paths=frame_paths,
-        max_tokens=800,
+        # Reasoning models think before answering; too small a budget gets
+        # consumed entirely by the thinking and returns no content at all.
+        max_tokens=1500,
         temperature=0.2,
         max_images=8,
         json_mode=False,
@@ -179,19 +544,26 @@ def _describe_scene(
 
 
 def _verify_description(
-    frame_paths: List[str], draft: str, client: GemmaClient
+    frame_paths: List[str], draft: str, client: GemmaClient,
+    hints: Optional[str] = None,
 ) -> str:
-    prompt = (
-        f'Here is a draft description of these frames: "{draft}"\n\n'
-        "Check it against the actual frames. If accurate and specific, repeat it "
-        "unchanged. If anything is wrong or too generic, correct it. Output ONLY "
-        "the final description."
+    prompt = f'Here is a draft description of these frames: "{draft}"\n\n'
+    if hints:
+        prompt += (
+            "Scenes of this kind often contain the following easily-missed "
+            "details; work each one into the description ONLY if the frames "
+            f"actually confirm it, and drop any that they do not: {hints}\n\n"
+        )
+    prompt += (
+        "Check the description against the actual frames. If accurate and "
+        "specific, repeat it unchanged. If anything is wrong or too generic, "
+        "correct it. Output ONLY the final description."
     )
     verified = client.vision_chat(
         system_prompt="You verify video descriptions against the actual frames.",
         user_text=prompt,
         image_paths=frame_paths,
-        max_tokens=800,
+        max_tokens=1500,
         temperature=0.2,
         max_images=8,
         json_mode=False,
@@ -205,7 +577,16 @@ def _write_style_caption(
     transcription: Optional[str],
     prior_captions: List[str],
     client: GemmaClient,
+    guide: Optional[Dict[str, Any]] = None,
 ) -> str:
+    angle_note = ""
+    if guide:
+        angle = guide.get("angles", {}).get(style)
+        if angle:
+            angle_note = (
+                "\nAn angle that lands well for this kind of scene (adapt it to "
+                f"the actual facts above, don't quote it verbatim): {angle}\n"
+            )
     variety_note = ""
     if prior_captions:
         variety_note = (
@@ -227,16 +608,27 @@ def _write_style_caption(
         "seems, likely). Build any joke on the real subject, action, and setting "
         "using 'like' or 'as if'.\n"
         f"{CAPTION_QUALITY_RULES}"
+        f"{angle_note}"
         f"{variety_note}\n"
-        'Return ONLY a raw JSON object: {"caption": "..."}'
+        'Return ONLY a raw JSON object: {"caption": "..."} — write it immediately, '
+        "with no analysis, no word counting, and no commentary before or after it."
     )
-    raw = client.fallback_chat(
-        system_prompt="You write video captions in a requested style. Output raw JSON only.",
-        user_text=prompt,
-        max_tokens=400,
-        temperature=0.3 if style == "formal" else 0.8,
-    )
-    return _clean_caption(extract_json_object(raw).get("caption", ""))
+    # Some models deliberate at length in the visible output and can burn the
+    # whole token budget before reaching the JSON; one retry rescues most of
+    # those instead of dropping to a generic template caption.
+    last_error: Optional[Exception] = None
+    for _ in range(2):
+        raw = client.fallback_chat(
+            system_prompt="You write video captions in a requested style. Output raw JSON only.",
+            user_text=prompt,
+            max_tokens=2500,
+            temperature=0.3 if style == "formal" else 0.8,
+        )
+        try:
+            return _clean_caption(extract_json_object(raw).get("caption", ""))
+        except ValueError as exc:
+            last_error = exc
+    raise last_error
 
 
 def _style_block(styles: List[str]) -> str:
@@ -512,12 +904,13 @@ def _repair_caption(
         f"Problems to fix: {'; '.join(problems)}\n"
         "Rewrite the caption as exactly ONE natural sentence, ideally 12-24 words and no more than 30, "
         "fixing every problem. If the original is too long, cut adjectives and secondary "
-        "clauses — never add new content. Count your words before answering."
+        "clauses — never add new content. Output the JSON immediately, with no "
+        "analysis or word counting before it."
     )
     raw = client.fallback_chat(
         system_prompt=system_prompt,
         user_text=user_text,
-        max_tokens=300,
+        max_tokens=1500,
         temperature=0.4,
     )
     return _clean_caption(extract_json_object(raw).get("caption", ""))

@@ -92,7 +92,7 @@ class GemmaClient:
 
         data = self._post_with_retry(endpoint, headers, payload)
 
-        raw_text = data["choices"][0]["message"]["content"].strip()
+        raw_text = _message_content(data)
         print(f"DEBUG {self.model} OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 
@@ -151,7 +151,7 @@ class GemmaClient:
         }
 
         data = self._post_with_retry(endpoint, headers, payload)
-        raw_text = data["choices"][0]["message"]["content"].strip()
+        raw_text = _message_content(data)
         print(f"DEBUG {vision_model} (VISION) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 
@@ -192,9 +192,26 @@ class GemmaClient:
         }
 
         data = self._post_with_retry(endpoint, headers, payload)
-        raw_text = data["choices"][0]["message"]["content"].strip()
+        raw_text = _message_content(data)
         print(f"DEBUG {fallback_model} (FALLBACK) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
+
+
+def _message_content(data: Dict[str, Any]) -> str:
+    """Extract the answer text from a chat completion. Reasoning models can
+    exhaust max_tokens while thinking, returning only `reasoning_content` and
+    no `content` key at all — surface that as a retryable error instead of a
+    KeyError."""
+    message = data["choices"][0]["message"]
+    content = (message.get("content") or "").strip()
+    if content:
+        return content
+    if message.get("reasoning_content"):
+        raise ValueError(
+            "Model spent the whole token budget on reasoning and returned no "
+            "answer; raise max_tokens for this call."
+        )
+    raise ValueError("Model returned an empty message.")
 
 
 def extract_json_object(text: str) -> Dict[str, Any]:

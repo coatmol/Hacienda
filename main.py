@@ -27,10 +27,12 @@ from pipeline.evaluator import (
     style_score,
 )
 
-# The judged harness has a hard wall-clock budget; the deep QA stages
+# The judged harness has a hard wall-clock budget; the full deep QA stages
 # (best-of-N candidates, self-eval, weak-style regeneration) triple the API
-# calls per clip. Keep them off unless explicitly enabled for offline runs.
-DEEP_QA = os.getenv("HACIENDA_DEEP_QA", "") == "1"
+# calls per clip. "lite" keeps only the best-of-N swap — the highest-value
+# stage at roughly a third of the cost. "1" enables everything.
+DEEP_QA_MODE = os.getenv("HACIENDA_DEEP_QA", "").strip().lower()
+DEEP_QA = DEEP_QA_MODE in ("1", "full", "lite")
 WORKERS = int(os.getenv("HACIENDA_WORKERS", "3"))
 
 # Wall-clock governor: the harness kills the run at ~10 minutes. Leave margin,
@@ -50,7 +52,7 @@ def _speed_for_now() -> str:
     return "direct"          # single vision call for all 4 styles
 
 
-def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription, captions, all_frame_paths):
+def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription, captions, all_frame_paths, lite=False):
     # Best-of-N for the humor styles: pool the draft caption with
     # higher-temperature alternatives, judge them against the frames,
     # and keep the top scorer per style. Any failure keeps the draft.
@@ -99,6 +101,9 @@ def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription
                     captions[style] = options[best_idx]
     except Exception as exc:
         print(f"  Best-of-N pass failed (keeping draft captions): {exc}")
+
+    if lite:
+        return captions
 
     scores = evaluate_captions(all_frame_paths, captions, client)
 
@@ -190,13 +195,18 @@ def process_task(task, client):
             speed=speed,
         )
 
-        if DEEP_QA:
+        # Deep QA multiplies the API calls for a task; only afford it while the
+        # clock is comfortable, so it can never push the run past the budget.
+        # Lite mode (best-of-N only) is cheap enough for a later cutoff.
+        lite = DEEP_QA_MODE == "lite"
+        qa_cutoff = (0.55 if lite else 0.40) * TIME_BUDGET
+        if DEEP_QA and (time.monotonic() - _START) < qa_cutoff:
             all_frame_paths = []
             for chunk in frame_chunks:
                 all_frame_paths.extend(chunk["frames"])
             captions = _deep_qa_pass(
                 task, frame_chunks, duration, has_audio, client,
-                transcription, captions, all_frame_paths,
+                transcription, captions, all_frame_paths, lite=lite,
             )
     except Exception as exc:
         print(f"Task {task_id} failed, writing fallback captions: {exc}")
