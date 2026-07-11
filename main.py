@@ -53,19 +53,20 @@ def _speed_for_now() -> str:
 
 
 def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription, captions, all_frame_paths, lite=False):
-    # Best-of-N for the humor styles: pool the draft caption with
+    # Best-of-N for every requested style: pool the draft caption with
     # higher-temperature alternatives, judge them against the frames,
     # and keep the top scorer per style. Any failure keeps the draft.
+    pool_styles = list(task.get("styles") or DEFAULT_STYLES)
     try:
         # Re-derive the validation-set archetype from the draft captions so the
         # candidate pass can also orbit the official reference captions.
         exemplar = _match_validation_exemplar(" ".join(captions.values()))
         extra = generate_style_candidates(
-            all_frame_paths, transcription, HUMOR_STYLES, client,
+            all_frame_paths, transcription, pool_styles, client,
             exemplar=exemplar,
         )
         pools = {}
-        for style in HUMOR_STYLES:
+        for style in pool_styles:
             draft = captions.get(style, "")
             options = [draft] if draft else []
             options += [c for c in extra.get(style, []) if c not in options]

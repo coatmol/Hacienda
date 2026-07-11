@@ -76,13 +76,58 @@ STRICT RULES:
         for idx, caption in enumerate(candidates, start=1):
             user_text += f'  candidate {idx}: "{caption}"\n'
 
-    return _judged_json(
-        client,
-        system_prompt=system_prompt,
-        user_text=user_text,
-        image_paths=frame_paths,
-        max_tokens=1500,
-    )
+    # The judge is noisy at single-sample resolution and its verdict decides
+    # which caption ships; two samples averaged roughly halve the selection
+    # noise for one extra vision call per clip.
+    samples = [
+        _judged_json(
+            client,
+            system_prompt=system_prompt,
+            user_text=user_text,
+            image_paths=frame_paths,
+            max_tokens=1500,
+        )
+        for _ in range(2)
+    ]
+    samples = [s for s in samples if isinstance(s, dict)]
+    if not samples:
+        return None
+    if len(samples) == 1:
+        return samples[0]
+    return _average_pool_scores(samples, pool)
+
+
+def _average_pool_scores(
+    samples: List[Dict[str, Any]], pool: Dict[str, List[str]]
+) -> Dict[str, List[Dict[str, float]]]:
+    """Average per-candidate accuracy/style_match across judge samples.
+    Candidates scored in only one sample keep that single score."""
+    merged: Dict[str, List[Dict[str, float]]] = {}
+    for style, candidates in pool.items():
+        entries: List[Dict[str, float]] = []
+        for idx in range(len(candidates)):
+            values: Dict[str, List[float]] = {"accuracy": [], "style_match": []}
+            for sample in samples:
+                style_entries = sample.get(style)
+                if not isinstance(style_entries, list) or idx >= len(style_entries):
+                    continue
+                metrics = style_entries[idx]
+                if not isinstance(metrics, dict):
+                    continue
+                for key in values:
+                    try:
+                        values[key].append(float(metrics.get(key)))
+                    except (TypeError, ValueError):
+                        pass
+            entries.append(
+                {
+                    key: sum(nums) / len(nums)
+                    for key, nums in values.items()
+                    if nums
+                }
+            )
+        merged[style] = entries
+    return merged
 
 
 def _judged_json(
