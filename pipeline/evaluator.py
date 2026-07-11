@@ -7,12 +7,12 @@ def _build_eval_prompt() -> str:
     return """You are an evaluator judging video captions against the video content shown in the keyframes.
 
 For EACH of the captions provided, score it on two dimensions (0.0 to 1.0):
-1. accuracy: how faithfully the caption reflects what is actually shown in the video frames.
+1. accuracy: whether the caption is free of hallucinations — every subject, action, object, and setting it mentions must be consistent with the frames. A caption does NOT need to describe everything; short captions that reference only one or two real details are fully accurate. Humorous framing (e.g. "When you deploy your code...", imagined feelings or relatable situations) is a style device, not a factual claim — do not penalize it as long as the scene details woven into it are real.
 2. style_match: how well the caption matches its intended tone.
-   - formal: professional, objective, factual tone (no jokes)
-   - sarcastic: dry, ironic, lightly mocking tone
-   - humorous_tech: funny, with technology/programming references
-   - humorous_non_tech: funny, everyday humour, NO technical jargon
+   - formal: clear, professional, objective description (no jokes)
+   - sarcastic: dry, ironic, lightly mocking, but still true to the scene (e.g. "Ah yes, ... truly the pinnacle of ...")
+   - humorous_tech: programmer-meme humor referencing real video details (e.g. "When you deploy your code, but the only ones cheering are the empty seats")
+   - humorous_non_tech: relatable everyday humor about the scene, NO technical jargon (e.g. "When you finally hit the beach after a long week, but the waves say not today")
 
 STRICT RULES:
 - Output ONLY valid JSON, nothing else. No explanation, no reasoning, no preamble.
@@ -56,12 +56,12 @@ def score_caption_pool(
     system_prompt = """You are an evaluator judging candidate video captions against the video content shown in the keyframes.
 
 For EACH candidate of EACH style, score it on two dimensions (0.0 to 1.0):
-1. accuracy: how faithfully the caption reflects what is actually shown in the video frames.
+1. accuracy: whether the caption is free of hallucinations — every subject, action, object, and setting it mentions must be consistent with the frames. A caption does NOT need to describe everything; short captions that reference only one or two real details are fully accurate. Humorous framing (e.g. "When you deploy your code...", imagined feelings or relatable situations) is a style device, not a factual claim — do not penalize it as long as the scene details woven into it are real.
 2. style_match: how well the caption matches its intended tone.
-   - formal: professional, objective, factual tone (no jokes)
-   - sarcastic: dry, ironic, lightly mocking tone
-   - humorous_tech: funny, with technology/programming references
-   - humorous_non_tech: funny, everyday humour, NO technical jargon
+   - formal: clear, professional, objective description (no jokes)
+   - sarcastic: dry, ironic, lightly mocking, but still true to the scene (e.g. "Ah yes, ... truly the pinnacle of ...")
+   - humorous_tech: programmer-meme humor referencing real video details (e.g. "When you deploy your code, but the only ones cheering are the empty seats")
+   - humorous_non_tech: relatable everyday humor about the scene, NO technical jargon (e.g. "When you finally hit the beach after a long week, but the waves say not today")
 
 STRICT RULES:
 - Output ONLY valid JSON, nothing else. No explanation, no reasoning, no preamble.

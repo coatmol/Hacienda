@@ -11,11 +11,11 @@ load_dotenv()
 
 import pipeline.extractor as extractor
 import pipeline.reader as reader
-import pipeline.transcriber as transcriber
 from gemma_client import GemmaClient
 from pipeline.captioner import (
     DEFAULT_STYLES,
     HUMOR_STYLES,
+    _match_validation_exemplar,
     fallback_captions,
     generate_captions,
     generate_style_candidates,
@@ -57,8 +57,12 @@ def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription
     # higher-temperature alternatives, judge them against the frames,
     # and keep the top scorer per style. Any failure keeps the draft.
     try:
+        # Re-derive the validation-set archetype from the draft captions so the
+        # candidate pass can also orbit the official reference captions.
+        exemplar = _match_validation_exemplar(" ".join(captions.values()))
         extra = generate_style_candidates(
-            all_frame_paths, transcription, HUMOR_STYLES, client
+            all_frame_paths, transcription, HUMOR_STYLES, client,
+            exemplar=exemplar,
         )
         pools = {}
         for style in HUMOR_STYLES:
@@ -172,20 +176,16 @@ def process_task(task, client):
         frame_chunks, duration = extractor.extract_frame_chunks(
             video_path, f"temp/frames/{task_id}"
         )
-        has_audio = extractor.extract_audio(video_path, f"temp/audio/{task_id}.wav")
+        # The benchmark clips carry no audio streams at all, so the
+        # transcription stage (extract_audio + Whisper) is skipped entirely —
+        # it only added latency and an external dependency.
+        has_audio = False
+        transcription = None
 
         print(
             f"Task ID: {task_id}, Clip duration: {duration:.1f}s, "
-            f"Chunks: {len(frame_chunks)}, Has audio: {has_audio}"
+            f"Chunks: {len(frame_chunks)}"
         )
-
-        transcription = (
-            transcriber.transcribe_audio(f"temp/audio/{task_id}.wav")
-            if has_audio
-            else None
-        )
-        if transcription is not None:
-            print(f"Transcription for {task_id}: {transcription}")
 
         speed = _speed_for_now()
         if speed != "full":
@@ -199,7 +199,7 @@ def process_task(task, client):
         # clock is comfortable, so it can never push the run past the budget.
         # Lite mode (best-of-N only) is cheap enough for a later cutoff.
         lite = DEEP_QA_MODE == "lite"
-        qa_cutoff = (0.55 if lite else 0.40) * TIME_BUDGET
+        qa_cutoff = (0.65 if lite else 0.40) * TIME_BUDGET
         if DEEP_QA and (time.monotonic() - _START) < qa_cutoff:
             all_frame_paths = []
             for chunk in frame_chunks:

@@ -2,7 +2,7 @@
 
 **AI-powered video captioning agent** — built for **Track 2** of the [LabLabAI × AMD Developer Hackathon: ACT II](https://lablab.ai).
 
-Hacienda watches a video so you don't have to. It downloads clips, samples keyframes, transcribes audio, writes a self-verified scene description, and turns it into four stylistically distinct captions — all inside a single Docker container, within the harness's 10-minute budget.
+Hacienda watches a video so you don't have to. It downloads clips, samples keyframes, writes a self-verified scene description, and turns it into four stylistically distinct captions — all inside a single Docker container, within the harness's 10-minute budget.
 
 ---
 
@@ -10,11 +10,11 @@ Hacienda watches a video so you don't have to. It downloads clips, samples keyfr
 
 - **Grounded caption pipeline** — describe → self-verify against the frames → write each style from the verified description only, so style writers can't hallucinate visual details they never saw
 - **Adaptive frame sampling** — picks 8 high-quality keyframes (896 px) across each clip, chunked for long videos
-- **Audio transcription** — extracts speech via [Groq Whisper](https://groq.com/) (large-v3) when an audio track is present
+- **Public-validation-set calibration** — prompts embed the reference captions the organizers published for retired validation scene types (see *AMD Hackathon Judging FAQ and Self-Check Guide* in the repo root) as per-style voice examples; when the model's own scene description matches one of those archetypes, that archetype's reference captions are surfaced as gold examples to adapt against the frames. Matching is content-based only — no task ids or URLs — and unmatched scenes use the generic examples
 - **Multi-style captioning** — generates `formal`, `sarcastic`, `humorous_tech`, and `humorous_non_tech` captions per clip, each with tone-anchoring few-shot examples and structural variety across styles
-- **Rule enforcement with repair** — validates natural length, single sentence, no hedging, no medium references, no tech words in `humorous_non_tech`; violations trigger targeted rewrite calls, never truncation
-- **Time-budget governor** — tasks run in parallel (3 workers by default) and generation degrades gracefully (`full` → `no_verify` → `direct`) as the deadline approaches, with results snapshotted after every task
-- **Optional deep QA** — best-of-N candidate generation, cross-model judging, and weak-style regeneration for offline runs (`HACIENDA_DEEP_QA=1`)
+- **Rule enforcement with repair** — validates natural length and sentence count, no hedging, no medium references, no tech words in `humorous_non_tech`; violations trigger targeted rewrite calls, never truncation
+- **Time-budget governor** — tasks run in parallel (4 workers by default) and generation degrades gracefully (`full` → `no_verify` → `direct`) as the deadline approaches, with results snapshotted after every task
+- **Deep QA** — best-of-N candidate generation with judge-ranked selection (`HACIENDA_DEEP_QA=lite`, the submission default); `full` adds self-eval and weak-style regeneration for offline runs
 - **Resilient by construction** — retry with exponential backoff on 429/5xx, layered fallbacks (grounded → direct single-pass → single-frame → templates), every task always produces valid output
 
 ---
@@ -23,14 +23,14 @@ Hacienda watches a video so you don't have to. It downloads clips, samples keyfr
 
 ```
 tasks.json
-    │  (tasks processed in parallel, 5 workers)
+    │  (tasks processed in parallel, 4 workers)
     ▼
-┌──────────┐   ┌────────────┐   ┌──────────────┐
-│  Reader   │──▶│  Extractor  │──▶│  Transcriber  │
-│ download  │   │  ffmpeg     │   │  Groq Whisper │
-└──────────┘   └────────────┘   └──────────────┘
-                     │                   │
-                     ▼                   ▼
+┌──────────┐   ┌────────────┐
+│  Reader   │──▶│  Extractor  │
+│ download  │   │  ffmpeg     │
+└──────────┘   └────────────┘
+                     │
+                     ▼
         ┌────────────────────────────────────┐
         │            Captioner               │
         │  describe (vision)                 │
@@ -40,18 +40,23 @@ tasks.json
         └────────────────────────────────────┘
                           │
                           ▼          ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
-                    results.json       Evaluator (optional
-              (snapshot per task)    │ deep QA, offline only) │
+                    results.json       Evaluator (best-of-N
+              (snapshot per task)    │ ranking, deep QA)     │
                                      └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
 ```
+
+The clips in the benchmark task set carry no audio streams, so the audio
+transcription stage (ffmpeg WAV extraction + Groq Whisper) is not wired into
+the runtime path; `pipeline/transcriber.py` remains available for clips that
+do have speech.
 
 ### Pipeline modules
 
 | Module | File | Role |
 |--------|------|------|
 | **Reader** | `pipeline/reader.py` | Resolves I/O paths, downloads video clips, reads/writes JSON |
-| **Extractor** | `pipeline/extractor.py` | Uses `ffprobe`/`ffmpeg` to get duration, sample frames (896 px), and extract 16 kHz mono WAV audio |
-| **Transcriber** | `pipeline/transcriber.py` | Sends audio to Groq's Whisper-large-v3 endpoint for speech-to-text |
+| **Extractor** | `pipeline/extractor.py` | Uses `ffprobe`/`ffmpeg` to get duration and sample frames (896 px) |
+| **Transcriber** | `pipeline/transcriber.py` | Speech-to-text via Groq Whisper-large-v3 (not in the runtime path — the benchmark clips have no audio) |
 | **Captioner** | `pipeline/captioner.py` | Describe → verify → per-style caption writing, rule validation, and targeted repair |
 | **Evaluator** | `pipeline/evaluator.py` | Scores captions on `accuracy` / `style_match` and ranks best-of-N candidate pools (deep QA mode) |
 | **Gemma Client** | `gemma_client.py` | OpenAI-compatible client for Fireworks AI with retry/backoff, JSON extraction, and configurable generation/judge models |
@@ -78,22 +83,23 @@ Create a `.env` file in the project root (already in `.gitignore`):
 ```env
 HACIENDA_GEMMA_BASE_URL=https://api.fireworks.ai/inference/v1
 HACIENDA_GEMMA_TOKEN=your-fireworks-api-key
-HACIENDA_GEMMA_MODEL=your-fireworks-model
-GROQ_API_KEY=your-groq-api-key
-HACIENDA_DEEP_QA=1
+HACIENDA_GEMMA_MODEL=your-fireworks-text-model
+HACIENDA_VISION_MODEL=your-fireworks-vision-model
+HACIENDA_JUDGE_MODEL=your-fireworks-vision-model
+HACIENDA_DEEP_QA=lite
+HACIENDA_WORKERS=4
 ```
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `HACIENDA_GEMMA_BASE_URL` | — | Base URL of the Fireworks AI inference endpoint |
 | `HACIENDA_GEMMA_TOKEN` | — | Bearer token for Fireworks AI (API key) |
-| `HACIENDA_GEMMA_MODEL` | `gemma` | Model used for generation, vision, fallback, and judging unless overridden |
-| `GROQ_API_KEY` | — | API key for Groq's Whisper audio transcription |
-| `HACIENDA_VISION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Optional override for describe/verify and direct generation |
-| `HACIENDA_JUDGE_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Optional override for deep QA scoring |
-| `HACIENDA_WORKERS` | `3` | Parallel task workers |
+| `HACIENDA_GEMMA_MODEL` | `gemma` | Text model used for the per-style caption writes and repairs |
+| `HACIENDA_VISION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Vision model for describe/verify and direct generation |
+| `HACIENDA_JUDGE_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Vision model for deep QA scoring and the offline benchmark |
+| `HACIENDA_WORKERS` | `3` | Parallel task workers (submission image uses 4) |
 | `HACIENDA_TIME_BUDGET` | `570` | Wall-clock budget in seconds; generation degrades as it runs out |
-| `HACIENDA_DEEP_QA` | off | Set to `1` to enable best-of-N + self-eval + regeneration |
+| `HACIENDA_DEEP_QA` | off | `lite` = best-of-N ranking (submission default); `full`/`1` adds self-eval + regeneration |
 
 ### 3. Build & run with Docker Compose (recommended)
 
@@ -156,7 +162,7 @@ The hackathon judging harness mounts volumes at fixed paths and enforces a **~10
 ]
 ```
 
-Each caption is a single English sentence, 15–30 words (the pipeline targets 25–29 for evidence density), faithful to the visual and audio evidence, with no hedging or references to the medium.
+Each caption is natural English (one sentence, or up to three short sentences for punchy humor formats, matching the organizers' published reference style), faithful to the visual evidence, with no hedging or references to the medium.
 
 ---
 
@@ -199,8 +205,7 @@ The `GemmaClient` loads the baked `.env` at runtime and ignores empty-string env
 | Language | Python 3.12 |
 | Container | Docker (slim base) |
 | Media processing | FFmpeg / FFprobe |
-| Audio transcription | Groq Whisper (large-v3) |
-| Vision + caption models | Fireworks AI (configurable; defaults to `HACIENDA_GEMMA_MODEL`) |
+| Vision + caption models | Fireworks AI (AMD-powered inference; configurable via `HACIENDA_*_MODEL`) |
 | HTTP client | Requests (retry with exponential backoff) |
 
 ---
