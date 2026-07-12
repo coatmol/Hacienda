@@ -274,24 +274,28 @@ def generate_captions_simple(
     if not client.available:
         raise RuntimeError("Gemma proxy is not configured.")
 
+    # Call shapes mirror DescribeX exactly: a single user message (no system
+    # prompt), no response_format, no max_tokens, temperature 0.3 throughout.
     analysis = client.vision_chat(
-        system_prompt="You are a careful visual analyst.",
+        system_prompt=None,
         user_text=SCENE_ANALYSIS_PROMPT.format(count=min(len(frame_paths), 16)),
         image_paths=frame_paths,
         max_tokens=None,
         temperature=0.3,
         max_images=16,
         json_mode=False,
+        reasoning_effort=os.getenv("HACIENDA_VISION_REASONING_EFFORT") or None,
     ).strip()
     if not analysis:
         raise ValueError("Scene analysis came back empty.")
     print(f"  Scene analysis ({len(analysis.split())} words).")
 
     raw = client.chat(
-        system_prompt="You write video captions. Output raw JSON only.",
+        system_prompt=None,
         user_text=SIMPLE_STYLE_PROMPT.format(analysis=analysis),
         max_tokens=None,
         temperature=0.3,
+        json_mode=False,
     )
     data = extract_json_object(raw)
     captions = {}

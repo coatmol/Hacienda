@@ -10,7 +10,7 @@ CHUNK_SECONDS = 60.0
 # 0 = keep the native resolution (no downscale); on-screen text and small
 # subjects survive at full size, at the cost of larger request payloads.
 FRAME_WIDTH = int(os.getenv("HACIENDA_FRAME_WIDTH", "896"))
-FRAME_QUALITY = "3"
+FRAME_QUALITY = os.getenv("HACIENDA_FRAME_QUALITY", "3")
 
 
 def _scale_args() -> list:

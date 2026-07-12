@@ -28,7 +28,6 @@ class GemmaClient:
         # Use the configured model for every stage unless the caller
         # explicitly opts into a separate vision/judge model.
         self.vision_model = os.getenv("HACIENDA_VISION_MODEL", self.model)
-        self.judge_model = os.getenv("HACIENDA_JUDGE_MODEL", self.model)
         self.timeout = int(os.getenv("HACIENDA_GEMMA_TIMEOUT", "90"))
         # Vision calls (multiple images through a reasoning model) routinely
         # run past the text timeout under worker concurrency; cutting them off
@@ -70,7 +69,7 @@ class GemmaClient:
 
     def chat(
         self,
-        system_prompt: str,
+        system_prompt: Optional[str],
         user_text: str,
         max_tokens: Optional[int] = 900,
         temperature: float = 0.35,
@@ -86,12 +85,13 @@ class GemmaClient:
         if not endpoint.endswith("/chat/completions"):
             endpoint = f"{endpoint}/chat/completions"
 
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_text})
         payload = {
             "model": model or self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
-            ],
+            "messages": messages,
             "temperature": temperature,
         }
         if json_mode:
@@ -116,7 +116,7 @@ class GemmaClient:
 
     def vision_chat(
         self,
-        system_prompt: str,
+        system_prompt: Optional[str],
         user_text: str,
         image_paths: List[str],
         max_tokens: Optional[int] = 900,
@@ -124,6 +124,7 @@ class GemmaClient:
         max_images: int = 8,
         model: Optional[str] = None,
         json_mode: bool = True,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
@@ -151,14 +152,17 @@ class GemmaClient:
                 }
             )
 
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
         payload = {
             "model": vision_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
+            "messages": messages,
             "temperature": temperature,
         }
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         # None lets the provider default apply — reasoning models finish their
         # thinking and still emit the answer instead of getting truncated.
         if max_tokens is not None:

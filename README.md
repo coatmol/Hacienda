@@ -2,20 +2,17 @@
 
 **AI-powered video captioning agent** — built for **Track 2** of the [LabLabAI × AMD Developer Hackathon: ACT II](https://lablab.ai).
 
-Hacienda watches a video so you don't have to. It downloads clips, samples keyframes, writes a self-verified scene description, and turns it into four stylistically distinct captions — all inside a single Docker container, within the harness's 10-minute budget.
+Hacienda watches a video so you don't have to. It downloads clips, samples keyframes, builds a factual scene understanding with a vision model, and turns it into four stylistically distinct captions — all inside a single Docker container, within the harness's 10-minute budget.
 
 ---
 
 ## ✨ Features
 
-- **Grounded caption pipeline** — describe → self-verify against the frames → write each style from the verified description only, so style writers can't hallucinate visual details they never saw
-- **Adaptive frame sampling** — picks 8 high-quality keyframes (896 px) across each clip, chunked for long videos
-- **Public-validation-set calibration** — prompts embed the reference captions the organizers published for retired validation scene types (see *AMD Hackathon Judging FAQ and Self-Check Guide* in the repo root) as per-style voice examples; when the model's own scene description matches one of those archetypes, that archetype's reference captions are surfaced as gold examples to adapt against the frames. Matching is content-based only — no task ids or URLs — and unmatched scenes use the generic examples
-- **Multi-style captioning** — generates `formal`, `sarcastic`, `humorous_tech`, and `humorous_non_tech` captions per clip, each with tone-anchoring few-shot examples and structural variety across styles
-- **Rule enforcement with repair** — validates natural length and sentence count, no hedging, no medium references, no tech words in `humorous_non_tech`; violations trigger targeted rewrite calls, never truncation
-- **Time-budget governor** — tasks run in parallel (4 workers by default) and generation degrades gracefully (`full` → `no_verify` → `direct`) as the deadline approaches, with results snapshotted after every task
-- **Deep QA** — best-of-N candidate generation with judge-ranked selection (`HACIENDA_DEEP_QA=lite`, the submission default); `full` adds self-eval and weak-style regeneration for offline runs
-- **Resilient by construction** — retry with exponential backoff on 429/5xx, layered fallbacks (grounded → direct single-pass → single-frame → templates), every task always produces valid output
+- **Two-stage caption pipeline** — a vision model produces a structured, factual scene analysis from 16 keyframes; a text model then writes all four styles from that analysis in one pass. Style writers never see raw pixels, so they cannot assert visual details the analysis did not establish
+- **Alternative grounded mode** — a three-stage variant (`HACIENDA_PIPELINE=generic`): structured JSON brief → verification pass that removes or generalizes unsupported claims (quoted text, brands, locations) → four styles written sequentially with prior captions fed forward for variety
+- **Multi-style captioning** — `formal`, `sarcastic`, `humorous_tech`, and `humorous_non_tech` captions per clip, each 2–4 sentences, grounded in the same scene analysis
+- **High-fidelity frame sampling** — 16 uniformly spaced keyframes per clip at up to 1920 px, high JPEG quality, chunk-aware for long videos
+- **Resilient by construction** — download retries with backoff, API retry on 429/5xx, per-task pipeline retries, template fallbacks as a last resort, and `results.json` snapshotted after every completed task so a hard kill still leaves valid output
 
 ---
 
@@ -23,30 +20,28 @@ Hacienda watches a video so you don't have to. It downloads clips, samples keyfr
 
 ```
 tasks.json
-    │  (tasks processed in parallel, 4 workers)
+    │  (tasks processed in parallel)
     ▼
 ┌──────────┐   ┌────────────┐
 │  Reader   │──▶│  Extractor  │
 │ download  │   │  ffmpeg     │
+│ + retries │   │  16 frames  │
 └──────────┘   └────────────┘
                      │
                      ▼
         ┌────────────────────────────────────┐
         │            Captioner               │
-        │  describe (vision)                 │
-        │     → verify vs frames (vision)    │
+        │  scene analysis (vision model)     │
         │     → 4 styled captions (text)     │
-        │     → rule check + repair          │
         └────────────────────────────────────┘
                           │
-                          ▼          ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
-                    results.json       Evaluator (best-of-N
-              (snapshot per task)    │ ranking, deep QA)     │
-                                     └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+                          ▼
+                    results.json
+              (snapshot per task)
 ```
 
 The clips in the benchmark task set carry no audio streams, so the audio
-transcription stage (ffmpeg WAV extraction + Groq Whisper) is not wired into
+transcription stage (ffmpeg WAV extraction + Whisper) is not wired into
 the runtime path; `pipeline/transcriber.py` remains available for clips that
 do have speech.
 
@@ -54,12 +49,12 @@ do have speech.
 
 | Module | File | Role |
 |--------|------|------|
-| **Reader** | `pipeline/reader.py` | Resolves I/O paths, downloads video clips, reads/writes JSON |
-| **Extractor** | `pipeline/extractor.py` | Uses `ffprobe`/`ffmpeg` to get duration and sample frames (896 px) |
-| **Transcriber** | `pipeline/transcriber.py` | Speech-to-text via Groq Whisper-large-v3 (not in the runtime path — the benchmark clips have no audio) |
-| **Captioner** | `pipeline/captioner.py` | Describe → verify → per-style caption writing, rule validation, and targeted repair |
-| **Evaluator** | `pipeline/evaluator.py` | Scores captions on `accuracy` / `style_match` and ranks best-of-N candidate pools (deep QA mode) |
-| **Gemma Client** | `gemma_client.py` | OpenAI-compatible client for Fireworks AI with retry/backoff, JSON extraction, and configurable generation/judge models |
+| **Reader** | `pipeline/reader.py` | Resolves I/O paths, downloads clips with retries, reads/writes JSON |
+| **Extractor** | `pipeline/extractor.py` | Uses `ffprobe`/`ffmpeg` to get duration and sample keyframes |
+| **Transcriber** | `pipeline/transcriber.py` | Speech-to-text (not in the runtime path — the benchmark clips have no audio) |
+| **Captioner** | `pipeline/captioner.py` | Scene analysis → four styled captions (submission pipeline) |
+| **Generic Captioner** | `pipeline/generic_captioner.py` | Brief → verify/generalize → sequential styles (alternative pipeline) |
+| **Gemma Client** | `gemma_client.py` | OpenAI-compatible client for Fireworks AI with retry/backoff, per-call model/timeout overrides, and JSON extraction |
 
 ---
 
@@ -83,23 +78,25 @@ Create a `.env` file in the project root (already in `.gitignore`):
 ```env
 HACIENDA_GEMMA_BASE_URL=https://api.fireworks.ai/inference/v1
 HACIENDA_GEMMA_TOKEN=your-fireworks-api-key
-HACIENDA_GEMMA_MODEL=your-fireworks-text-model
-HACIENDA_VISION_MODEL=your-fireworks-vision-model
-HACIENDA_JUDGE_MODEL=your-fireworks-vision-model
-HACIENDA_DEEP_QA=lite
-HACIENDA_WORKERS=4
+HACIENDA_GEMMA_MODEL=accounts/fireworks/models/gpt-oss-120b
+HACIENDA_VISION_MODEL=accounts/fireworks/models/minimax-m3
+HACIENDA_PIPELINE=simple
+HACIENDA_WORKERS=2
 ```
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `HACIENDA_GEMMA_BASE_URL` | — | Base URL of the Fireworks AI inference endpoint |
 | `HACIENDA_GEMMA_TOKEN` | — | Bearer token for Fireworks AI (API key) |
-| `HACIENDA_GEMMA_MODEL` | `gemma` | Text model used for the per-style caption writes and repairs |
-| `HACIENDA_VISION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Vision model for describe/verify and direct generation |
-| `HACIENDA_JUDGE_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Vision model for deep QA scoring and the offline benchmark |
-| `HACIENDA_WORKERS` | `3` | Parallel task workers (submission image uses 4) |
-| `HACIENDA_TIME_BUDGET` | `570` | Wall-clock budget in seconds; generation degrades as it runs out |
-| `HACIENDA_DEEP_QA` | off | `lite` = best-of-N ranking (submission default); `full`/`1` adds self-eval + regeneration |
+| `HACIENDA_GEMMA_MODEL` | `gemma` | Text model that writes the styled captions |
+| `HACIENDA_VISION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Vision model for the scene analysis |
+| `HACIENDA_CAPTION_MODEL` | same as `HACIENDA_GEMMA_MODEL` | Caption model for the generic pipeline's sequential style writes |
+| `HACIENDA_PIPELINE` | `generic` | `simple` = two-stage pipeline (submission default); `generic` = brief → verify → sequential styles |
+| `HACIENDA_WORKERS` | `3` | Parallel task workers |
+| `HACIENDA_TIME_BUDGET` | `570` | Wall-clock budget in seconds |
+| `HACIENDA_MAX_FRAMES` / `HACIENDA_MIN_FRAMES` | `16` / `8` | Keyframe count per clip |
+| `HACIENDA_FRAME_WIDTH` | `896` | Frame downscale cap in pixels (`0` = native) |
+| `HACIENDA_GEMMA_TIMEOUT` / `HACIENDA_VISION_TIMEOUT` | `90` / `180` | Per-request timeouts (seconds) for text / vision calls |
 
 ### 3. Build & run with Docker Compose (recommended)
 
@@ -119,7 +116,7 @@ docker run --rm \
   hacienda
 ```
 
-Note: no `--env-file` — this verifies the baked `.env` works exactly as it will under the harness. The first log line should read `Models: generation=..., judge=...`; if it says `FATAL CONFIG`, the image has no usable credentials.
+Note: no `--env-file` — this verifies the baked `.env` works exactly as it will under the harness. The first log line after the entrypoint should read `Pipeline: simple | vision=..., text=...`; if it says `FATAL CONFIG`, the image has no usable credentials.
 
 ---
 
@@ -162,21 +159,7 @@ The hackathon judging harness mounts volumes at fixed paths and enforces a **~10
 ]
 ```
 
-Each caption is natural English (one sentence, or up to three short sentences for punchy humor formats, matching the organizers' published reference style), faithful to the visual evidence, with no hedging or references to the medium.
-
----
-
-## 🧪 Offline tools
-
-Iterate locally instead of burning leaderboard submissions:
-
-```bash
-# Score an existing output/results.json against the clips with the judge model
-python scripts/benchmark.py [tasks.json] [results.json]
-
-# Discover which vision models your API token can actually use
-python scripts/probe_models.py [model-id ...]
-```
+Each caption is natural English, 2–4 sentences, faithful to the visual evidence, with no hedging and no references to frames or models.
 
 ---
 
@@ -214,25 +197,22 @@ The `GemmaClient` loads the baked `.env` at runtime and ignores empty-string env
 
 ```
 Hacienda/
-├── main.py                 # Entry point — parallel orchestration, time governor
-├── gemma_client.py         # OpenAI-compatible Fireworks client (retry, env handling)
+├── main.py                    # Entry point — parallel orchestration, retries, snapshots
+├── gemma_client.py            # OpenAI-compatible Fireworks client (retry, env handling)
 ├── pipeline/
-│   ├── reader.py           # I/O: download clips, read/write JSON
-│   ├── extractor.py        # Frame sampling & audio extraction (ffmpeg)
-│   ├── transcriber.py      # Speech-to-text via Groq Whisper
-│   ├── captioner.py        # Describe → verify → styled captions, rules & repair
-│   └── evaluator.py        # Judge scoring & candidate ranking (deep QA)
-├── scripts/
-│   ├── benchmark.py        # Offline scorer for results.json
-│   └── probe_models.py     # Discover usable vision models on the API
+│   ├── reader.py              # I/O: download clips (with retries), read/write JSON
+│   ├── extractor.py           # Frame sampling & audio extraction (ffmpeg)
+│   ├── transcriber.py         # Speech-to-text (not in the runtime path)
+│   ├── captioner.py           # Scene analysis → four styled captions
+│   └── generic_captioner.py   # Brief → verify/generalize → sequential styles
 ├── examples/
-│   └── tasks.json          # Sample tasks for local testing
+│   └── tasks.json             # Sample tasks for local testing
 ├── demo/
-│   └── web_app.py          # Interactive FastAPI demo UI
-├── Dockerfile              # Production container definition
-├── docker-compose.yml      # Dev convenience (auto .env + volume mount)
-├── requirements.txt        # Python dependencies
-└── .env                    # Local secrets (git-ignored, baked into the image)
+│   └── web_app.py             # Interactive FastAPI demo UI
+├── Dockerfile                 # Production container definition
+├── docker-compose.yml         # Dev convenience (auto .env + volume mount)
+├── requirements.txt           # Python dependencies
+└── .env                       # Local secrets (git-ignored, baked into the image)
 ```
 
 ---

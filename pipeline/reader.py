@@ -1,5 +1,7 @@
 import json
 import os
+import time
+
 import requests
 
 
@@ -9,7 +11,7 @@ def read_tasks_from_json(file_path):
     return tasks
 
 
-def download_video(url, output_path):
+def download_video(url, output_path, retries=3):
     print(f"Downloading video from {url} to {output_path}...")
 
     folder_path = os.path.dirname(output_path)
@@ -22,13 +24,28 @@ def download_video(url, output_path):
     if folder_path:
         os.makedirs(folder_path, exist_ok=True)
 
-    with requests.get(url, stream=True, timeout=90) as response:
-        response.raise_for_status()  # Throws error early if 404
+    # A single flaky fetch must not cost the whole task: a failed task ships
+    # template captions, which score far below even a mediocre real caption.
+    last_error = None
+    for attempt in range(retries):
+        try:
+            with requests.get(url, stream=True, timeout=90) as response:
+                response.raise_for_status()  # Throws error early if 404
 
-        with open(output_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    file.write(chunk)
+                partial_path = output_path + ".part"
+                with open(partial_path, "wb") as file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            file.write(chunk)
+                os.replace(partial_path, output_path)
+                return
+        except Exception as exc:
+            last_error = exc
+            if attempt < retries - 1:
+                wait = 5 * (attempt + 1)
+                print(f"  Download failed ({exc}); retrying in {wait}s...")
+                time.sleep(wait)
+    raise last_error
 
 
 def resolve_input_path() -> str:

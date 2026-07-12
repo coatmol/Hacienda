@@ -20,7 +20,6 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from pipeline.captioner import DEFAULT_STYLES, fallback_captions, generate_captions
-from pipeline.evaluator import evaluate_captions
 from pipeline import extractor, reader, transcriber
 from gemma_client import GemmaClient
 
@@ -65,38 +64,10 @@ def _run_pipeline(task_id: str, video_path: str) -> dict:
             task, frame_chunks, duration, has_audio, client, transcription
         )
 
-        # Self-evaluation
-        all_frames = [f for chunk in frame_chunks for f in chunk["frames"]]
-        scores = evaluate_captions(all_frames, captions, client)
-
-        # Repair weak styles: regenerate only those and merge back, never
-        # letting a failed repair discard captions we already have.
-        if scores:
-            try:
-                weak_styles = [
-                    s
-                    for s, metrics in scores.items()
-                    if isinstance(metrics, dict)
-                    and (float(metrics.get("accuracy", 1.0)) + float(metrics.get("style_match", 1.0))) / 2 < 0.6
-                ]
-                if weak_styles:
-                    repaired = generate_captions(
-                        task, frame_chunks, duration, has_audio, client, transcription,
-                        focus_styles=weak_styles,
-                    )
-                    generic = fallback_captions(weak_styles)
-                    for style in weak_styles:
-                        replacement = repaired.get(style)
-                        if replacement and replacement != generic.get(style):
-                            captions[style] = replacement
-            except Exception:
-                traceback.print_exc()
-
         return {
             "success": True,
             "task_id": task_id,
             "captions": captions,
-            "scores": scores,
             "duration": round(duration, 1),
         }
     except Exception as exc:

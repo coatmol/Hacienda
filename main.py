@@ -14,27 +14,12 @@ import pipeline.reader as reader
 from gemma_client import GemmaClient
 from pipeline.captioner import (
     DEFAULT_STYLES,
-    HUMOR_STYLES,
-    _match_validation_exemplar,
     fallback_captions,
     generate_captions,
     generate_captions_simple,
-    generate_style_candidates,
-)
-from pipeline.evaluator import (
-    evaluate_captions,
-    metric_score,
-    score_caption_pool,
-    style_score,
 )
 from pipeline.generic_captioner import generate_captions_generic
 
-# The judged harness has a hard wall-clock budget; the full deep QA stages
-# (best-of-N candidates, self-eval, weak-style regeneration) triple the API
-# calls per clip. "lite" keeps only the best-of-N swap — the highest-value
-# stage at roughly a third of the cost. "1" enables everything.
-DEEP_QA_MODE = os.getenv("HACIENDA_DEEP_QA", "").strip().lower()
-DEEP_QA = DEEP_QA_MODE in ("1", "full", "lite")
 # "simple" = the two-call pipeline (structured scene analysis -> one
 # all-styles write); the grounded multi-stage pipeline stays as its fallback.
 # NOTE: HACIENDA_MODE collides with the Dockerfile's entrypoint switch
@@ -62,122 +47,6 @@ def _speed_for_now() -> str:
     if elapsed < 0.80 * TIME_BUDGET:
         return "no_verify"   # drop the verification vision call
     return "direct"          # single vision call for all 4 styles
-
-
-def _deep_qa_pass(task, frame_chunks, duration, has_audio, client, transcription, captions, all_frame_paths, lite=False):
-    # Best-of-N for every requested style: pool the draft caption with
-    # higher-temperature alternatives, judge them against the frames,
-    # and keep the top scorer per style. Any failure keeps the draft.
-    pool_styles = list(task.get("styles") or DEFAULT_STYLES)
-    try:
-        # Re-derive the validation-set archetype from the draft captions so the
-        # candidate pass can also orbit the official reference captions.
-        exemplar = _match_validation_exemplar(" ".join(captions.values()))
-        extra = generate_style_candidates(
-            all_frame_paths, transcription, pool_styles, client,
-            exemplar=exemplar,
-        )
-        pools = {}
-        for style in pool_styles:
-            draft = captions.get(style, "")
-            options = [draft] if draft else []
-            options += [c for c in extra.get(style, []) if c not in options]
-            if len(options) > 1:
-                pools[style] = options
-
-        if pools:
-            pool_scores = score_caption_pool(all_frame_paths, pools, client)
-            for style, options in pools.items():
-                entries = (
-                    pool_scores.get(style) if isinstance(pool_scores, dict) else None
-                )
-                if not isinstance(entries, list) or not entries:
-                    continue
-                # Weight accuracy above style_match: hallucination is
-                # the harshest judge penalty, and the high-temperature
-                # candidates are the ones most prone to it.
-                draft_score = metric_score(entries[0], accuracy_weight=0.65)
-                best_idx, best_score = 0, draft_score
-                for idx in range(1, min(len(options), len(entries))):
-                    score = metric_score(entries[idx], accuracy_weight=0.65)
-                    if score is None:
-                        continue
-                    if best_score is None or score > best_score:
-                        best_idx, best_score = idx, score
-                # The self-judge is noisy; near-ties are coin flips that
-                # trade a grounded low-temperature draft for a riskier
-                # candidate. Only swap on a decisive win.
-                if best_idx != 0 and (
-                    draft_score is None or best_score >= draft_score + 0.10
-                ):
-                    print(
-                        f"  Best-of-N: {style} candidate {best_idx} wins "
-                        f"decisively ({best_score:.2f} vs draft "
-                        f"{draft_score if draft_score is None else round(draft_score, 2)})."
-                    )
-                    captions[style] = options[best_idx]
-    except Exception as exc:
-        print(f"  Best-of-N pass failed (keeping draft captions): {exc}")
-
-    if lite:
-        return captions
-
-    scores = evaluate_captions(all_frame_paths, captions, client)
-
-    # If scores are low, regenerate ONLY the weak styles and merge them back.
-    # Any failure here must never discard the captions we already have.
-    if scores:
-        try:
-            weak_styles = []
-            for style in captions:
-                score = style_score(scores, style)
-                if score is not None and score < 0.6:
-                    weak_styles.append(style)
-
-            if weak_styles:
-                print(f"  Weak styles detected: {weak_styles}. Regenerating...")
-                repaired = generate_captions(
-                    task,
-                    frame_chunks,
-                    duration,
-                    has_audio,
-                    client,
-                    transcription,
-                    focus_styles=weak_styles,
-                )
-                generic = fallback_captions(weak_styles)
-                candidates = dict(captions)
-                for style in weak_styles:
-                    replacement = repaired.get(style)
-                    if replacement and replacement != generic.get(style):
-                        candidates[style] = replacement
-
-                changed = [
-                    s for s in weak_styles if candidates.get(s) != captions.get(s)
-                ]
-                if changed:
-                    # Re-score and keep whichever version of each style scored
-                    # higher; a regeneration is not automatically better than
-                    # what it replaces.
-                    new_scores = evaluate_captions(all_frame_paths, candidates, client)
-                    for style in changed:
-                        old_score = style_score(scores, style)
-                        new_score = style_score(new_scores, style)
-                        if (
-                            old_score is not None
-                            and new_score is not None
-                            and new_score < old_score
-                        ):
-                            print(
-                                f"  Regenerated {style} scored worse "
-                                f"({new_score:.2f} < {old_score:.2f}); keeping original."
-                            )
-                        else:
-                            captions[style] = candidates[style]
-        except Exception as exc:
-            print(f"  Repair pass failed (keeping original captions): {exc}")
-
-    return captions
 
 
 def process_task(task, client):
@@ -256,21 +125,6 @@ def process_task(task, client):
                 speed=speed,
             )
 
-        # Deep QA multiplies the API calls for a task; only afford it while the
-        # clock is comfortable, so it can never push the run past the budget.
-        # Lite mode (best-of-N only) is cheap enough for a later cutoff.
-        lite = DEEP_QA_MODE == "lite"
-        qa_cutoff = (0.65 if lite else 0.40) * TIME_BUDGET
-        # Simple mode ships the two-call output untouched: our self-judge has
-        # proven anti-correlated with the real judge, so no best-of-N swaps.
-        if DEEP_QA and PIPELINE_MODE != "simple" and (time.monotonic() - _START) < qa_cutoff:
-            all_frame_paths = []
-            for chunk in frame_chunks:
-                all_frame_paths.extend(chunk["frames"])
-            captions = _deep_qa_pass(
-                task, frame_chunks, duration, has_audio, client,
-                transcription, captions, all_frame_paths, lite=lite,
-            )
     except Exception as exc:
         print(f"Task {task_id} failed, writing fallback captions: {exc}")
         captions = fallback_captions(task.get("styles") or DEFAULT_STYLES)
@@ -297,7 +151,7 @@ if __name__ == "__main__":
             f"Pipeline: {PIPELINE or PIPELINE_MODE or 'legacy'} | "
             f"vision={client.vision_model}, text={client.model}, "
             f"caption_model={os.getenv('HACIENDA_CAPTION_MODEL', '') or client.model}, "
-            f"workers={WORKERS}, deep_qa={DEEP_QA}"
+            f"workers={WORKERS}"
         )
 
     results_by_id = {}
