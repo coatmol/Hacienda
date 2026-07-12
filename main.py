@@ -27,6 +27,7 @@ from pipeline.evaluator import (
     score_caption_pool,
     style_score,
 )
+from pipeline.generic_captioner import generate_captions_generic
 
 # The judged harness has a hard wall-clock budget; the full deep QA stages
 # (best-of-N candidates, self-eval, weak-style regeneration) triple the API
@@ -36,7 +37,14 @@ DEEP_QA_MODE = os.getenv("HACIENDA_DEEP_QA", "").strip().lower()
 DEEP_QA = DEEP_QA_MODE in ("1", "full", "lite")
 # "simple" = the two-call pipeline (structured scene analysis -> one
 # all-styles write); the grounded multi-stage pipeline stays as its fallback.
+# NOTE: HACIENDA_MODE collides with the Dockerfile's entrypoint switch
+# (ENV HACIENDA_MODE=pipeline), which load_dotenv never overrides — on the
+# judged harness "simple" silently never activated. The pipeline selector
+# therefore lives in its own variable.
 PIPELINE_MODE = os.getenv("HACIENDA_MODE", "").strip().lower()
+# "generic" (default) = brief -> verify/genericize -> sequential styles;
+# any other value falls through to the legacy HACIENDA_MODE paths.
+PIPELINE = os.getenv("HACIENDA_PIPELINE", "generic").strip().lower()
 WORKERS = int(os.getenv("HACIENDA_WORKERS", "3"))
 
 # Wall-clock governor: the harness kills the run at ~10 minutes. Leave margin,
@@ -193,10 +201,48 @@ def process_task(task, client):
         )
 
         captions = None
+        all_frames = [f for c in frame_chunks for f in c["frames"]]
+        styles = list(task.get("styles") or DEFAULT_STYLES)
+
+        if PIPELINE == "generic":
+            # Attempt 1 with the verify/genericize pass; attempt 2 drops it
+            # (fewer failure points, still genericized by the caption prompt).
+            for attempt, skip_verify in enumerate((False, True)):
+                try:
+                    captions = generate_captions_generic(
+                        all_frames, styles, client, skip_verify=skip_verify
+                    )
+                    break
+                except Exception as exc:
+                    print(
+                        f"  Generic pipeline attempt {attempt + 1} failed "
+                        f"for {task_id}: {exc}"
+                    )
+            if captions is None:
+                print(f"  Generic pipeline exhausted for {task_id}; trying simple.")
+                try:
+                    captions = generate_captions_simple(all_frames, styles, client)
+                except Exception as exc:
+                    print(f"  Simple fallback also failed for {task_id}: {exc}")
+                    captions = fallback_captions(styles)
+            return {"task_id": task_id, "captions": captions}
+
+        if PIPELINE == "simple":
+            for attempt in range(2):
+                try:
+                    captions = generate_captions_simple(all_frames, styles, client)
+                    break
+                except Exception as exc:
+                    print(
+                        f"  Simple pipeline attempt {attempt + 1} failed "
+                        f"for {task_id}: {exc}"
+                    )
+            if captions is None:
+                captions = fallback_captions(styles)
+            return {"task_id": task_id, "captions": captions}
+
         if PIPELINE_MODE == "simple":
             try:
-                all_frames = [f for c in frame_chunks for f in c["frames"]]
-                styles = list(task.get("styles") or DEFAULT_STYLES)
                 captions = generate_captions_simple(all_frames, styles, client)
             except Exception as exc:
                 print(f"  Simple pipeline failed for {task_id}; falling back: {exc}")
@@ -248,7 +294,9 @@ if __name__ == "__main__":
         )
     else:
         print(
-            f"Models: generation={client.vision_model}, judge={client.judge_model}, "
+            f"Pipeline: {PIPELINE or PIPELINE_MODE or 'legacy'} | "
+            f"vision={client.vision_model}, text={client.model}, "
+            f"caption_model={os.getenv('HACIENDA_CAPTION_MODEL', '') or client.model}, "
             f"workers={WORKERS}, deep_qa={DEEP_QA}"
         )
 

@@ -207,49 +207,63 @@ def _match_validation_exemplar(text: str) -> Optional[Dict[str, str]]:
 # then one text call that writes all four styles from that analysis. No
 # verification, no candidate ranking, no exemplar injection, no rule repair.
 
-SCENE_ANALYSIS_PROMPT = (
-    "You are a careful visual analyst. You are given {count} frames sampled "
-    "in order from one short video. Build a structured, factual account of "
-    "the video, covering every section below:\n\n"
-    "1. Scene / Setting — the location, venue, or environment.\n"
-    "2. Subjects — every person, animal, or focal object; appearance, "
-    "position, distinguishing features.\n"
-    "3. Actions — what is happening; movements, interactions, events across "
-    "the frames.\n"
-    "4. Environment — indoor/outdoor, apparent time of day, weather or "
-    "season indicators.\n"
-    "5. Mood / Tone — the atmosphere conveyed by lighting, color, "
-    "expressions, pacing.\n"
-    "6. Key Visual Elements — dominant colors, notable objects, any readable "
-    "on-screen text, graphical elements.\n"
-    "7. Temporal Flow — how the scene changes from the first frame to the "
-    "last.\n\n"
-    "Report only what you observe — no captions, no humor, no opinions. "
-    "This analysis feeds a downstream writer, so accuracy and completeness "
-    "matter more than brevity. Use the numbered sections as your structure."
-)
+# Prompt text mirrors the top-scoring public DescribeX submission verbatim
+# (its templates are public); earlier loose paraphrases of it underperformed.
+SCENE_ANALYSIS_PROMPT = """You are a precise visual analyst. You will be shown {count} representative frames sampled from a short video. Your task is to produce a structured, factual understanding of the video content.
 
-SIMPLE_STYLE_PROMPT = (
-    "You are an expert caption writer. Below is a factual scene analysis of "
-    "a video. Write one caption for the video in each of these four styles:\n\n"
-    "--- SCENE ANALYSIS ---\n{analysis}\n--- END SCENE ANALYSIS ---\n\n"
-    "1. formal — professional, clear, informative; precise language, "
-    "neutral authoritative tone.\n"
-    "2. sarcastic — witty, ironic, tongue-in-cheek; dry humor that playfully "
-    "pokes fun at what is happening.\n"
-    "3. humorous_tech — funny with programming / tech-culture references; "
-    "analogies to software, hardware, or well-known tech concepts.\n"
-    "4. humorous_non_tech — funny with everyday relatable humor; no jargon, "
-    "accessible to everyone.\n\n"
-    "REQUIREMENTS:\n"
-    "- Each caption MUST be 2 to 4 sentences long.\n"
-    "- Ground every caption in the actual scene details from the analysis.\n"
-    "- Speak about the video and its scene directly; never mention 'frames', "
-    "sampling, or the analysis itself.\n"
-    '- Output ONLY a valid JSON object with exactly these keys: "formal", '
-    '"sarcastic", "humorous_tech", "humorous_non_tech" — each value a single '
-    "string. No markdown fences, no commentary, nothing else."
-)
+Analyze the frames and provide a detailed description covering ALL of the following categories:
+
+1. **Scene / Setting**
+   Where is this taking place? Describe the location, venue, or environment visible in the frames.
+
+2. **Subjects**
+   Who or what is visible? Describe people, animals, objects, or other focal subjects. Note their appearance, positioning, and any distinguishing features.
+
+3. **Actions**
+   What is happening? Describe the activities, movements, interactions, or events taking place across the frames.
+
+4. **Environment**
+   Is this indoor or outdoor? What time of day does it appear to be? Are there any weather or seasonal indicators?
+
+5. **Mood / Tone**
+   What feeling or atmosphere does the video convey? Consider lighting, color grading, facial expressions, body language, and pacing.
+
+6. **Key Visual Elements**
+   Note prominent colors, notable objects, any on-screen text or overlays, graphical elements, and visual transitions between frames.
+
+7. **Temporal Flow**
+   How does the scene progress from the first frame to the last? Describe any changes, developments, or narrative arc visible across the sequence of frames.
+
+IMPORTANT INSTRUCTIONS:
+- Be factual and neutral throughout. Report only what you observe.
+- Do NOT generate captions or taglines.
+- Do NOT inject humor, sarcasm, or personal opinion.
+- This is an internal analytical step. Your description will be used downstream — accuracy and completeness are critical.
+- Write in clear, concise prose. Use the numbered categories above as your structure."""
+
+SIMPLE_STYLE_PROMPT = """You are an expert caption writer. Below is a factual scene description generated from a video. Your task is to generate captions for this video in exactly four distinct styles.
+
+--- SCENE DESCRIPTION ---
+{analysis}
+--- END SCENE DESCRIPTION ---
+
+Generate one caption for EACH of the following styles:
+
+1. **formal** — Professional, clear, and informative. Suitable for business presentations, educational content, or official communications. Use precise language and a neutral, authoritative tone.
+
+2. **sarcastic** — Witty, ironic, and tongue-in-cheek. Deliver commentary that playfully pokes fun at what is happening in the video. Use dry humor and clever observations.
+
+3. **humorous_tech** — Funny with references to tech culture, programming, internet memes, or developer humor. Use analogies to software, hardware, algorithms, or well-known tech concepts to make the caption entertaining for a tech-savvy audience.
+
+4. **humorous_non_tech** — Funny with everyday, relatable, non-technical humor. Use observations about daily life, common human experiences, or universally understood situations. No jargon — accessible to everyone.
+
+REQUIREMENTS:
+- Each caption MUST be 2 to 4 sentences long.
+- Output ONLY a valid JSON object with exactly these four keys: "formal", "sarcastic", "humorous_tech", "humorous_non_tech".
+- Each value must be a single string containing the caption for that style.
+- Do NOT wrap the JSON in markdown code fences.
+- Do NOT include any explanation, commentary, or extra text before or after the JSON.
+- Output ONLY the JSON object. Nothing else."""
 
 
 def generate_captions_simple(

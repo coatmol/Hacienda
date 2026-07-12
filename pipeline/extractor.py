@@ -4,7 +4,8 @@ import os
 import subprocess
 from typing import Dict, List, Tuple
 
-MAX_FRAMES_PER_CLIP = 16
+MAX_FRAMES_PER_CLIP = int(os.getenv("HACIENDA_MAX_FRAMES", "16"))
+MIN_FRAMES_PER_CLIP = int(os.getenv("HACIENDA_MIN_FRAMES", "8"))
 CHUNK_SECONDS = 60.0
 # 0 = keep the native resolution (no downscale); on-screen text and small
 # subjects survive at full size, at the cost of larger request payloads.
@@ -42,7 +43,8 @@ def get_duration(video_path: str) -> float:
 def compute_frame_timestamps(
     duration: float, safety_margin: float = 0.15, max_frames: int = MAX_FRAMES_PER_CLIP
 ) -> List[float]:
-    frame_count = max(8, min(max_frames, int(duration / 3)))
+    min_frames = min(MIN_FRAMES_PER_CLIP, max_frames)
+    frame_count = max(min_frames, min(max_frames, int(duration / 3)))
     max_ts = max(duration - safety_margin, 0)
 
     if frame_count <= 1:

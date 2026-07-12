@@ -30,13 +30,22 @@ class GemmaClient:
         self.vision_model = os.getenv("HACIENDA_VISION_MODEL", self.model)
         self.judge_model = os.getenv("HACIENDA_JUDGE_MODEL", self.model)
         self.timeout = int(os.getenv("HACIENDA_GEMMA_TIMEOUT", "90"))
+        # Vision calls (multiple images through a reasoning model) routinely
+        # run past the text timeout under worker concurrency; cutting them off
+        # and retrying from zero costs more than waiting.
+        self.vision_timeout = int(os.getenv("HACIENDA_VISION_TIMEOUT", "180"))
 
     @property
     def available(self) -> bool:
         return bool(self.base_url and self.token)
 
     def _post_with_retry(
-        self, endpoint: str, headers: Dict[str, str], payload: Dict[str, Any], retries: int = 4
+        self,
+        endpoint: str,
+        headers: Dict[str, str],
+        payload: Dict[str, Any],
+        retries: int = 4,
+        timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """POST with exponential backoff on transient failures (429, 5xx,
         network errors). Non-retryable 4xx errors raise immediately."""
@@ -44,7 +53,7 @@ class GemmaClient:
         for attempt in range(retries):
             try:
                 response = requests.post(
-                    endpoint, headers=headers, json=payload, timeout=self.timeout
+                    endpoint, headers=headers, json=payload, timeout=timeout or self.timeout
                 )
                 response.raise_for_status()
                 return response.json()
@@ -65,6 +74,9 @@ class GemmaClient:
         user_text: str,
         max_tokens: Optional[int] = 900,
         temperature: float = 0.35,
+        model: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
+        json_mode: bool = True,
     ) -> str:
         if not self.available:
             raise RuntimeError("Gemma proxy is not configured.")
@@ -75,14 +87,19 @@ class GemmaClient:
             endpoint = f"{endpoint}/chat/completions"
 
         payload = {
-            "model": self.model,
+            "model": model or self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ],
             "temperature": temperature,
-            "response_format": {"type": "json_object"},
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        # Reasoning models (kimi-k2p6, gpt-oss) leak deliberation into content
+        # unless reasoning is explicitly turned off.
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
         headers = {
@@ -94,7 +111,7 @@ class GemmaClient:
         data = self._post_with_retry(endpoint, headers, payload)
 
         raw_text = _message_content(data)
-        print(f"DEBUG {self.model} OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
+        print(f"DEBUG {payload['model']} OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text
 
     def vision_chat(
@@ -154,7 +171,7 @@ class GemmaClient:
             "Accept": "application/json",
         }
 
-        data = self._post_with_retry(endpoint, headers, payload)
+        data = self._post_with_retry(endpoint, headers, payload, timeout=self.vision_timeout)
         raw_text = _message_content(data)
         print(f"DEBUG {vision_model} (VISION) OUTPUT:\n{raw_text}\n---END DEBUG---", flush=True)
         return raw_text

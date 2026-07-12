@@ -3,6 +3,7 @@ temp/
 output/
 scripts/
 bench_temp/
+temp_repo/
+inputs/
 
 .env
-temp_repo/
