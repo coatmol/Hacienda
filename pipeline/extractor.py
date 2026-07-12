@@ -6,8 +6,16 @@ from typing import Dict, List, Tuple
 
 MAX_FRAMES_PER_CLIP = 16
 CHUNK_SECONDS = 60.0
-FRAME_WIDTH = 896
+# 0 = keep the native resolution (no downscale); on-screen text and small
+# subjects survive at full size, at the cost of larger request payloads.
+FRAME_WIDTH = int(os.getenv("HACIENDA_FRAME_WIDTH", "896"))
 FRAME_QUALITY = "3"
+
+
+def _scale_args() -> list:
+    if FRAME_WIDTH <= 0:
+        return []
+    return ["-vf", f"scale='min({FRAME_WIDTH},iw)':-2"]
 
 
 def get_duration(video_path: str) -> float:
@@ -82,8 +90,7 @@ def extract_frames(
                 video_path,
                 "-frames:v",
                 "1",
-                "-vf",
-                f"scale='min({FRAME_WIDTH},iw)':-2",
+                *_scale_args(),
                 "-q:v",
                 FRAME_QUALITY,
                 out_path,
@@ -119,8 +126,7 @@ def extract_frame_chunks(video_path: str, out_dir: str) -> Tuple[List[Dict], flo
                     video_path,
                     "-frames:v",
                     "1",
-                    "-vf",
-                    f"scale='min({FRAME_WIDTH},iw)':-2",
+                    *_scale_args(),
                     "-q:v",
                     FRAME_QUALITY,
                     out_path,

@@ -63,7 +63,7 @@ class GemmaClient:
         self,
         system_prompt: str,
         user_text: str,
-        max_tokens: int = 900,
+        max_tokens: Optional[int] = 900,
         temperature: float = 0.35,
     ) -> str:
         if not self.available:
@@ -81,9 +81,10 @@ class GemmaClient:
                 {"role": "user", "content": user_text},
             ],
             "temperature": temperature,
-            "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
@@ -101,7 +102,7 @@ class GemmaClient:
         system_prompt: str,
         user_text: str,
         image_paths: List[str],
-        max_tokens: int = 900,
+        max_tokens: Optional[int] = 900,
         temperature: float = 0.35,
         max_images: int = 8,
         model: Optional[str] = None,
@@ -140,8 +141,11 @@ class GemmaClient:
                 {"role": "user", "content": content},
             ],
             "temperature": temperature,
-            "max_tokens": max_tokens,
         }
+        # None lets the provider default apply — reasoning models finish their
+        # thinking and still emit the answer instead of getting truncated.
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         headers = {
@@ -159,7 +163,7 @@ class GemmaClient:
         self,
         system_prompt: str,
         user_text: str,
-        max_tokens: int = 900,
+        max_tokens: Optional[int] = 900,
         temperature: float = 0.35,
     ) -> str:
         """Text-only fallback using the configured model.
@@ -182,9 +186,10 @@ class GemmaClient:
                 {"role": "user", "content": user_text},
             ],
             "temperature": temperature,
-            "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",

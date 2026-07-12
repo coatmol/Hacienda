@@ -18,6 +18,7 @@ from pipeline.captioner import (
     _match_validation_exemplar,
     fallback_captions,
     generate_captions,
+    generate_captions_simple,
     generate_style_candidates,
 )
 from pipeline.evaluator import (
@@ -33,6 +34,9 @@ from pipeline.evaluator import (
 # stage at roughly a third of the cost. "1" enables everything.
 DEEP_QA_MODE = os.getenv("HACIENDA_DEEP_QA", "").strip().lower()
 DEEP_QA = DEEP_QA_MODE in ("1", "full", "lite")
+# "simple" = the two-call pipeline (structured scene analysis -> one
+# all-styles write); the grounded multi-stage pipeline stays as its fallback.
+PIPELINE_MODE = os.getenv("HACIENDA_MODE", "").strip().lower()
 WORKERS = int(os.getenv("HACIENDA_WORKERS", "3"))
 
 # Wall-clock governor: the harness kills the run at ~10 minutes. Leave margin,
@@ -188,20 +192,32 @@ def process_task(task, client):
             f"Chunks: {len(frame_chunks)}"
         )
 
-        speed = _speed_for_now()
-        if speed != "full":
-            print(f"  Time budget tightening: {task_id} running in '{speed}' mode.")
-        captions = generate_captions(
-            task, frame_chunks, duration, has_audio, client, transcription,
-            speed=speed,
-        )
+        captions = None
+        if PIPELINE_MODE == "simple":
+            try:
+                all_frames = [f for c in frame_chunks for f in c["frames"]]
+                styles = list(task.get("styles") or DEFAULT_STYLES)
+                captions = generate_captions_simple(all_frames, styles, client)
+            except Exception as exc:
+                print(f"  Simple pipeline failed for {task_id}; falling back: {exc}")
+
+        if captions is None:
+            speed = _speed_for_now()
+            if speed != "full":
+                print(f"  Time budget tightening: {task_id} running in '{speed}' mode.")
+            captions = generate_captions(
+                task, frame_chunks, duration, has_audio, client, transcription,
+                speed=speed,
+            )
 
         # Deep QA multiplies the API calls for a task; only afford it while the
         # clock is comfortable, so it can never push the run past the budget.
         # Lite mode (best-of-N only) is cheap enough for a later cutoff.
         lite = DEEP_QA_MODE == "lite"
         qa_cutoff = (0.65 if lite else 0.40) * TIME_BUDGET
-        if DEEP_QA and (time.monotonic() - _START) < qa_cutoff:
+        # Simple mode ships the two-call output untouched: our self-judge has
+        # proven anti-correlated with the real judge, so no best-of-N swaps.
+        if DEEP_QA and PIPELINE_MODE != "simple" and (time.monotonic() - _START) < qa_cutoff:
             all_frame_paths = []
             for chunk in frame_chunks:
                 all_frame_paths.extend(chunk["frames"])

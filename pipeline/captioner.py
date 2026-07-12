@@ -201,6 +201,94 @@ def _match_validation_exemplar(text: str) -> Optional[Dict[str, str]]:
     return best["captions"]
 
 
+# --- Simple two-call pipeline -------------------------------------------
+# Mirrors the architecture of the top-scoring public submission: one
+# structured scene-analysis vision call over up to 16 full-resolution frames,
+# then one text call that writes all four styles from that analysis. No
+# verification, no candidate ranking, no exemplar injection, no rule repair.
+
+SCENE_ANALYSIS_PROMPT = (
+    "You are a careful visual analyst. You are given {count} frames sampled "
+    "in order from one short video. Build a structured, factual account of "
+    "the video, covering every section below:\n\n"
+    "1. Scene / Setting — the location, venue, or environment.\n"
+    "2. Subjects — every person, animal, or focal object; appearance, "
+    "position, distinguishing features.\n"
+    "3. Actions — what is happening; movements, interactions, events across "
+    "the frames.\n"
+    "4. Environment — indoor/outdoor, apparent time of day, weather or "
+    "season indicators.\n"
+    "5. Mood / Tone — the atmosphere conveyed by lighting, color, "
+    "expressions, pacing.\n"
+    "6. Key Visual Elements — dominant colors, notable objects, any readable "
+    "on-screen text, graphical elements.\n"
+    "7. Temporal Flow — how the scene changes from the first frame to the "
+    "last.\n\n"
+    "Report only what you observe — no captions, no humor, no opinions. "
+    "This analysis feeds a downstream writer, so accuracy and completeness "
+    "matter more than brevity. Use the numbered sections as your structure."
+)
+
+SIMPLE_STYLE_PROMPT = (
+    "You are an expert caption writer. Below is a factual scene analysis of "
+    "a video. Write one caption for the video in each of these four styles:\n\n"
+    "--- SCENE ANALYSIS ---\n{analysis}\n--- END SCENE ANALYSIS ---\n\n"
+    "1. formal — professional, clear, informative; precise language, "
+    "neutral authoritative tone.\n"
+    "2. sarcastic — witty, ironic, tongue-in-cheek; dry humor that playfully "
+    "pokes fun at what is happening.\n"
+    "3. humorous_tech — funny with programming / tech-culture references; "
+    "analogies to software, hardware, or well-known tech concepts.\n"
+    "4. humorous_non_tech — funny with everyday relatable humor; no jargon, "
+    "accessible to everyone.\n\n"
+    "REQUIREMENTS:\n"
+    "- Each caption MUST be 2 to 4 sentences long.\n"
+    "- Ground every caption in the actual scene details from the analysis.\n"
+    "- Speak about the video and its scene directly; never mention 'frames', "
+    "sampling, or the analysis itself.\n"
+    '- Output ONLY a valid JSON object with exactly these keys: "formal", '
+    '"sarcastic", "humorous_tech", "humorous_non_tech" — each value a single '
+    "string. No markdown fences, no commentary, nothing else."
+)
+
+
+def generate_captions_simple(
+    frame_paths: List[str], styles: List[str], client: GemmaClient
+) -> Dict[str, str]:
+    """Two-call pipeline: structured scene analysis -> one all-styles write.
+    Raises on failure; the caller decides the fallback."""
+    if not client.available:
+        raise RuntimeError("Gemma proxy is not configured.")
+
+    analysis = client.vision_chat(
+        system_prompt="You are a careful visual analyst.",
+        user_text=SCENE_ANALYSIS_PROMPT.format(count=min(len(frame_paths), 16)),
+        image_paths=frame_paths,
+        max_tokens=None,
+        temperature=0.3,
+        max_images=16,
+        json_mode=False,
+    ).strip()
+    if not analysis:
+        raise ValueError("Scene analysis came back empty.")
+    print(f"  Scene analysis ({len(analysis.split())} words).")
+
+    raw = client.chat(
+        system_prompt="You write video captions. Output raw JSON only.",
+        user_text=SIMPLE_STYLE_PROMPT.format(analysis=analysis),
+        max_tokens=None,
+        temperature=0.3,
+    )
+    data = extract_json_object(raw)
+    captions = {}
+    for style in styles:
+        text = _clean_caption(data.get(style, ""))
+        if not text:
+            raise ValueError(f"Style '{style}' missing from the model output.")
+        captions[style] = _ensure_sentence(text)
+    return captions
+
+
 GROUNDING_RULE = (
     "GROUNDING RULE (applies to EVERY style, including humorous ones): each caption must be "
     "recognizably about THIS scene — the real subject, their real action, and the real setting "
@@ -823,8 +911,18 @@ def fallback_captions(
     return {style: _ensure_sentence(templates.get(style, templates["formal"])) for style in styles}
 
 
+_UNICODE_PUNCT = {
+    "‑": "-", "–": "-", "—": " - ",
+    "‘": "'", "’": "'", "“": '"', "”": '"',
+    "…": "...",
+}
+
+
 def _clean_caption(value: str) -> str:
-    text = re.sub(r"\s+", " ", str(value)).strip().strip("\"'")
+    text = str(value)
+    for src, dst in _UNICODE_PUNCT.items():
+        text = text.replace(src, dst)
+    text = re.sub(r"\s+", " ", text).strip().strip("\"'")
     return re.sub(r"^[\-*: ]+", "", text)
 
 
